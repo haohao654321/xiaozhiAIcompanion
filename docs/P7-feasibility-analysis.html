@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>家庭陪伴机器人功能扩展可行性分析</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f8f7f4;
+    --surface2: #f0eee8;
+    --border: #e0ddd4;
+    --text: #2c2c2a;
+    --text2: #5f5e5a;
+    --text3: #888780;
+    --primary: #534ab7;
+    --primary-light: #eeedfe;
+    --teal: #0f6e56;
+    --teal-light: #e1f5ee;
+    --coral: #d85a30;
+    --coral-light: #faece7;
+    --amber: #854f0b;
+    --amber-light: #faeeda;
+    --blue: #185fa5;
+    --blue-light: #e6f1fb;
+    --red: #a32d2d;
+    --red-light: #fcebeb;
+    --green: #3b6d11;
+    --green-light: #eaf3de;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: var(--surface);
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 14px;
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+  h1 {
+    font-size: 22px;
+    font-weight: 500;
+    color: var(--primary);
+    margin-bottom: 4px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--primary);
+  }
+  .subtitle { font-size: 13px; color: var(--text3); margin-bottom: 28px; }
+  h2 {
+    font-size: 17px;
+    font-weight: 500;
+    color: var(--text);
+    margin: 32px 0 12px 0;
+    padding: 8px 14px;
+    background: var(--surface2);
+    border-radius: 8px;
+    border-left: 4px solid var(--primary);
+  }
+  h3 {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text2);
+    margin: 20px 0 8px 0;
+  }
+  p { margin-bottom: 10px; }
+  ul, ol { margin: 6px 0 12px 22px; }
+  li { margin-bottom: 4px; }
+  code {
+    font-family: "JetBrains Mono", "Consolas", monospace;
+    font-size: 12px;
+    background: var(--surface2);
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: var(--coral);
+  }
+  .card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 12px 0;
+  }
+  .card-teal { border-left: 4px solid var(--teal); background: var(--teal-light); }
+  .card-coral { border-left: 4px solid var(--coral); background: var(--coral-light); }
+  .card-amber { border-left: 4px solid var(--amber); background: var(--amber-light); }
+  .card-blue { border-left: 4px solid var(--blue); background: var(--blue-light); }
+  .card-red { border-left: 4px solid var(--red); background: var(--red-light); }
+  .card-green { border-left: 4px solid var(--green); background: var(--green-light); }
+  .card-purple { border-left: 4px solid var(--primary); background: var(--primary-light); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+  th {
+    text-align: left;
+    padding: 8px 12px;
+    background: var(--surface2);
+    font-weight: 500;
+    border-bottom: 2px solid var(--border);
+    color: var(--text2);
+  }
+  td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tr:hover td { background: var(--surface); }
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+    margin-right: 4px;
+  }
+  .badge-ok { background: var(--green-light); color: var(--green); }
+  .badge-warn { background: var(--amber-light); color: var(--amber); }
+  .badge-risk { background: var(--red-light); color: var(--red); }
+  .badge-info { background: var(--blue-light); color: var(--blue); }
+  .verdict {
+    font-size: 18px;
+    font-weight: 500;
+    text-align: center;
+    padding: 16px;
+    border-radius: 10px;
+    margin: 16px 0;
+  }
+  .verdict-ok { background: var(--green-light); color: var(--green); border: 1px solid var(--green); }
+  .verdict-warn { background: var(--amber-light); color: var(--amber); border: 1px solid var(--amber); }
+  .verdict-risk { background: var(--red-light); color: var(--red); border: 1px solid var(--red); }
+  .toc {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+  }
+  .toc ol { margin-left: 18px; }
+  .toc li { margin-bottom: 4px; }
+  .toc a { color: var(--primary); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .highlight { background: var(--amber-light); padding: 1px 4px; border-radius: 3px; }
+  .footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text3);
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<h1>家庭陪伴机器人功能扩展可行性分析</h1>
+<p class="subtitle">ESP32-S3 桌面伴侣 "小智" | 2026-08-17 | 基于 P6-disp-v1h 现状评估</p>
+
+<div class="toc">
+  <strong>目录</strong>
+  <ol>
+    <li><a href="#overview">功能概述与商业对标</a></li>
+    <li><a href="#face">核心模块一：ESP32-S3 端侧人脸识别</a></li>
+    <li><a href="#cloud">核心模块二：云端消息中继架构</a></li>
+    <li><a href="#app">核心模块三：手机 APP</a></li>
+    <li><a href="#hardware">硬件资源评估</a></li>
+    <li><a href="#risk">风险矩阵与替代方案</a></li>
+    <li><a href="#roadmap">实施路线图建议</a></li>
+    <li><a href="#conclusion">结论</a></li>
+  </ol>
+</div>
+
+<h2 id="overview">一、功能概述与商业对标</h2>
+
+<p>用户需求拆解为 4 个子功能：</p>
+<ol>
+  <li><strong>上电自启</strong>：插电即工作（已实现，现有架构开机即运行）</li>
+  <li><strong>人脸识别</strong>：识别 3 名家庭成员身份</li>
+  <li><strong>留言投递</strong>：不在家时，家人通过 APP 发留言/语音/图片/任务，对应成员回家后机器人识别身份并播报</li>
+  <li><strong>手机 APP</strong>：配置机器人、上传照片、留言管理</li>
+</ol>
+
+<div class="card card-blue">
+  <strong>商业对标：萤石 RK3 家庭助理机器人（2024 年发布）</strong>
+  <p style="margin-top:8px">几乎完全一致的产品形态——RK3 核心卖点就是"本地人脸识别 → 个性化留言推送"，通过手机 APP 管理家庭成员、留言提醒。区别在于 RK3 有 7 英寸屏、3 轴云台、400 万摄像头、专用 AI 芯片，售价约 2000-3000 元。用户的项目是微型化版本：1.5 寸屏、固定摄像头、ESP32-S3 芯片，但功能逻辑可以复刻。</p>
+  <p>其他对标产品：Loona 机器狗（ChatGPT+人脸识别+APP）、耘趣家伴 AI 机器人（异地陪伴+人脸识别），均采用"本地人脸识别 + 云端消息中继 + 手机 APP"三层架构。</p>
+</div>
+
+<h2 id="face">二、核心模块一：ESP32-S3 端侧人脸识别</h2>
+
+<h3>2.1 技术方案：ESP-WHO 框架</h3>
+<p>乐鑫官方提供 <code>ESP-WHO</code> 视觉框架，内置完整的人脸检测+识别流水线，<strong>无需自己训练模型</strong>：</p>
+
+<table>
+  <tr>
+    <th>环节</th>
+    <th>模型</th>
+    <th>大小</th>
+    <th>ESP32-S3 实测</th>
+    <th>说明</th>
+  </tr>
+  <tr>
+    <td>人脸检测</td>
+    <td>MTMN (MTCNN+MobileNet)</td>
+    <td>~87KB</td>
+    <td>120-180ms/帧</td>
+    <td>240x240 输入，定位人脸边界框+关键点</td>
+  </tr>
+  <tr>
+    <td>特征提取</td>
+    <td>MobileFaceNet 量化版</td>
+    <td>~196KB</td>
+    <td>80-420ms/次</td>
+    <td>128/512 维特征向量，LFW 99.2% 准确率</td>
+  </tr>
+  <tr>
+    <td>特征比对</td>
+    <td>余弦相似度</td>
+    <td>~0KB (计算)</td>
+    <td><5ms</td>
+    <td>与注册库比对，默认阈值 0.52</td>
+  </tr>
+  <tr>
+    <td><strong>合计</strong></td>
+    <td></td>
+    <td>~1.2MB</td>
+    <td><strong>~300-700ms</strong></td>
+    <td>3 人库比对，满足"回家识别"场景</td>
+  </tr>
+</table>
+
+<h3>2.2 关键优势：OV3660 已在支持列表</h3>
+<div class="card card-green">
+  <p>ESP-WHO 官方文档明确列出支持 <strong>OV2640 和 OV3660</strong> 两种摄像头。用户项目的 OV3660（硬件 JPEG、320x240 QVGA）正好在列，<strong>硬件兼容性无问题</strong>。</p>
+</div>
+
+<h3>2.3 核心风险：ESP-WHO 与 Arduino/PlatformIO 的兼容性</h3>
+<div class="card card-coral">
+  <p><strong>这是整个方案最大的技术风险点。</strong></p>
+  <p>ESP-WHO 基于 <strong>ESP-IDF</strong> 框架开发（使用 <code>idf.py</code> 编译、<code>menuconfig</code> 配置），而用户项目是 <strong>Arduino + PlatformIO</strong> 框架。两者不能直接混用。</p>
+  <p>有三条路径解决：</p>
+  <table style="margin-top:8px">
+    <tr>
+      <th>路径</th>
+      <th>做法</th>
+      <th>工作量</th>
+      <th>风险</th>
+    </tr>
+    <tr>
+      <td><span class="badge badge-warn">方案 A</span><br>提取组件做 Arduino 库</td>
+      <td>从 ESP-WHO 提取 <code>esp-face</code> + <code>esp-dl</code> + <code>esp32-camera</code> 组件，作为 PlatformIO 本地 lib 集成（类似已做的 esp-sr 方案）</td>
+      <td>中等<br>~2-3 天</td>
+      <td>需处理 ESP-IDF API 差异、CMake→SCons 适配；但已有 esp-sr 集成经验可复用</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-risk">方案 B</span><br>切 ESP-IDF 框架</td>
+      <td>整个项目迁移到 ESP-IDF，放弃 Arduino</td>
+      <td>极大<br>~2-3 周</td>
+      <td>现有所有 Arduino API 代码（WiFi、I2S、Camera、Display）需重写；不推荐</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-info">方案 C</span><br>云端人脸识别 API</td>
+      <td>拍照→上传百度/腾讯人脸识别 API→返回身份</td>
+      <td>小<br>~1 天</td>
+      <td>依赖网络、有延迟（~2s）、有 API 调用费用；但无框架兼容问题</td>
+    </tr>
+  </table>
+  <p style="margin-top:8px"><strong>推荐方案 A</strong>——与 esp-sr 集成模式一致，用户有经验基础。ESP32 Arduino Core 3.x 已内置部分 esp-face 组件，提取集成的难度可控。</p>
+</div>
+
+<h3>2.4 人脸注册流程</h3>
+<p>ESP-WHO 支持"离线注册"：用户在 APP 上拍 3 张正脸照 → 上传云端 → 云端提取特征向量（或 ESP32 本地提取） → 存储到 Flash/SD 卡。之后每次检测到人脸时，提取特征与注册库比对即可识别身份。</p>
+<p>3 人的特征库仅占 <strong>3 x 128 维 x 4 字节 = 1.5KB</strong>，可存 NVS 或 SPIFFS。</p>
+
+<h2 id="cloud">三、核心模块二：云端消息中继架构</h2>
+
+<h3>3.1 为什么需要云端</h3>
+<p>用户在外出时通过 APP 发留言，机器人不在同一局域网。需要一个"中继站"让 APP 和机器人通信。标准 IoT 方案是 MQTT + HTTP 文件服务。</p>
+
+<h3>3.2 通信架构设计</h3>
+<table>
+  <tr>
+    <th>数据类型</th>
+    <th>上行 (APP→机器人)</th>
+    <th>下行 (机器人→APP)</th>
+    <th>协议</th>
+  </tr>
+  <tr>
+    <td>文字留言</td>
+    <td>APP → MQTT Broker → 机器人</td>
+    <td>MQTT publish 即时推送</td>
+    <td>MQTT (JSON, &lt;4KB)</td>
+  </tr>
+  <tr>
+    <td>语音留言</td>
+    <td>APP 录音 → HTTP 上传 → URL → MQTT 通知</td>
+    <td>机器人收到 URL → HTTP 下载 → 播放</td>
+    <td>HTTP POST + MQTT</td>
+  </tr>
+  <tr>
+    <td>图片</td>
+    <td>APP 选图 → HTTP 上传 → URL → MQTT 通知</td>
+    <td>机器人 HTTP 下载 → SD 卡缓存 → LCD 显示</td>
+    <td>HTTP POST + MQTT</td>
+  </tr>
+  <tr>
+    <td>任务/提醒</td>
+    <td>APP 设置定时 → 云端存储 → 到点 MQTT 推送</td>
+    <td>机器人收到 → TTS 播报</td>
+    <td>MQTT + 定时器</td>
+  </tr>
+  <tr>
+    <td>人脸注册</td>
+    <td>APP 拍照 → HTTP 上传 → 云端/本地提取特征</td>
+    <td>特征向量推送到机器人 NVS</td>
+    <td>HTTP + MQTT</td>
+  </tr>
+</table>
+
+<div class="card card-amber">
+  <p><strong>图片传输的坑</strong>：ESP32 的 MQTT 库 (PubSubClient) 单条消息限制约 64KB，一张 JPEG 图片通常 20-100KB。标准做法是 <strong>HTTP 上传图片到服务器 → 获取 URL → MQTT 只发 URL 字符串</strong>。机器人收到 URL 后用 HTTPClient 下载到 SD 卡。这条路径成熟可靠。</p>
+</div>
+
+<h3>3.3 云端服务选项</h3>
+<table>
+  <tr>
+    <th>方案</th>
+    <th>成本</th>
+    <th>延迟</th>
+    <th>适合度</th>
+    <th>说明</th>
+  </tr>
+  <tr>
+    <td>免费公共 MQTT Broker<br>(EMQX 免费版 / HiveMQ)</td>
+    <td>0 元</td>
+    <td>~100-500ms</td>
+    <td><span class="badge badge-warn">可用</span></td>
+    <td>有连接数/消息量限制，不稳定时丢消息；适合验证阶段</td>
+  </tr>
+  <tr>
+    <td>阿里云 IoT 平台<br>(MQTT + OSS 存储服务)</td>
+    <td>~5-10 元/月</td>
+    <td>~50-100ms</td>
+    <td><span class="badge badge-ok">推荐</span></td>
+    <td>稳定可靠、国内低延迟、有 SDK、能和天猫精灵生态联动</td>
+  </tr>
+  <tr>
+    <td>自建 VPS<br>(Mosquitto + Nginx + SQLite)</td>
+    <td>~30-50 元/月</td>
+    <td>~50-200ms</td>
+    <td><span class="badge badge-info">可选</span></td>
+    <td>完全自控、灵活；需自己运维</td>
+  </tr>
+  <tr>
+    <td>树莓派本地服务器</td>
+    <td>一次性 ~¥300</td>
+    <td>~10ms (局域网)</td>
+    <td><span class="badge badge-warn">有条件</span></td>
+    <td>需额外硬件，且 APP 在外网时无法访问</td>
+  </tr>
+</table>
+
+<div class="card card-blue">
+  <p><strong>推荐阿里云 IoT</strong>——用户家中已有天猫精灵生态（阿里云生活物联网平台），可以直接复用账号体系。MQTT 消息 + OSS 存储图片，月成本约 5-10 元，延迟可控。记忆中已记录的 P8 智能家居方向也走阿里云 MQTT，可统筹。</p>
+</div>
+
+<h3>3.4 ESP32 端资源消耗</h3>
+<ul>
+  <li><strong>PubSubClient 库</strong>：~50KB Flash + ~15KB RAM</li>
+  <li><strong>HTTPClient</strong>：已有（STT/LLM/TTS 在用）</li>
+  <li><strong>SD 卡缓存</strong>：留言图片/语音下载后存 SD 卡，已有 SD 接口</li>
+  <li><strong>MQTT 与现有 HTTPS 对话共存</strong>：ESP32-S3 WiFi 足够支撑双连接，但需注意 TLS 内存开销（~50KB Flash / ~15KB RAM），记忆中已评估"无压力"</li>
+</ul>
+
+<h2 id="app">四、核心模块三：手机 APP</h2>
+
+<h3>4.1 技术选型</h3>
+<table>
+  <tr>
+    <th>框架</th>
+    <th>语言</th>
+    <th>跨平台</th>
+    <th>BLE 配网</th>
+    <th>IoT 生态</th>
+    <th>推荐度</th>
+  </tr>
+  <tr>
+    <td><strong>Flutter</strong></td>
+    <td>Dart</td>
+    <td>Android + iOS</td>
+    <td>flutter_blue_plus</td>
+    <td>esp_smartconfig 包</td>
+    <td><span class="badge badge-ok">首选</span></td>
+  </tr>
+  <tr>
+    <td>React Native</td>
+    <td>JS/TS</td>
+    <td>Android + iOS</td>
+    <td>react-native-ble-plx</td>
+    <td>社区包</td>
+    <td><span class="badge badge-info">可选</span></td>
+  </tr>
+  <tr>
+    <td>微信小程序</td>
+    <td>JS</td>
+    <td>仅微信内</td>
+    <td>不支持 BLE</td>
+    <td>需 WiFi 配网替代</td>
+    <td><span class="badge badge-warn">受限</span></td>
+  </tr>
+</table>
+
+<div class="card card-purple">
+  <p><strong>推荐 Flutter</strong>——一套代码同时出 Android + iOS，社区有成熟的 ESP32 BLE 配网方案（esp_smartconfig 包）和 MQTT 客户端包，与 IoT 设备交互的案例最多。Dart 语言对有 JS/Python 基础的人上手快。</p>
+</div>
+
+<h3>4.2 APP 功能模块</h3>
+<table>
+  <tr>
+    <th>页面</th>
+    <th>功能</th>
+    <th>对应云端</th>
+  </tr>
+  <tr>
+    <td>设备配网</td>
+    <td>BLE 扫描 → 绑定设备 → WiFi 配网（SmartConfig 或 BLE 传 SSID/密码）</td>
+    <td>设备绑定记录</td>
+  </tr>
+  <tr>
+    <td>家庭成员管理</td>
+    <td>添加成员 → 拍 3 张正脸照 → 上传注册</td>
+    <td>人脸特征库</td>
+  </tr>
+  <tr>
+    <td>留言中心</td>
+    <td>选收件人 → 文字/语音/图片 → 发送</td>
+    <td>MQTT + HTTP 文件服务</td>
+  </tr>
+  <tr>
+    <td>任务提醒</td>
+    <td>设定时任务（如"提醒妈妈吃药 8:00"）</td>
+    <td>定时器 + MQTT</td>
+  </tr>
+  <tr>
+    <td>消息状态</td>
+    <td>查看留言是否已被机器人播报（已读/未读）</td>
+    <td>机器人回传状态</td>
+  </tr>
+  <tr>
+    <td>设置</td>
+    <td>音量/阈值/人格 prompt 等</td>
+    <td>NVS 参数下发</td>
+  </tr>
+</table>
+
+<h3>4.3 开发工作量</h3>
+<p>Flutter APP 开发需要一定的前端开发能力。对于有编程基础的人：</p>
+<ul>
+  <li>配网 + 基本框架：~2-3 天</li>
+  <li>留言/图片/语音发送：~2-3 天</li>
+  <li>人脸注册上传：~1 天</li>
+  <li>任务提醒 + 设置页：~1-2 天</li>
+  <li>调试优化：~2-3 天</li>
+  <li><strong>合计约 1-2 周</strong>（有一定 Flutter 基础的话）</li>
+</ul>
+
+<h2 id="hardware">五、硬件资源评估</h2>
+
+<h3>5.1 现有硬件盘点</h3>
+<table>
+  <tr>
+    <th>组件</th>
+    <th>现状</th>
+    <th>是否满足新需求</th>
+    <th>备注</th>
+  </tr>
+  <tr>
+    <td>ESP32-S3 N16R8</td>
+    <td>16MB Flash + 8MB PSRAM</td>
+    <td><span class="badge badge-ok">满足</span></td>
+    <td>人脸模型 ~1.2MB 放 Flash，推理缓冲放 PSRAM</td>
+  </tr>
+  <tr>
+    <td>OV3660 摄像头</td>
+    <td>320x240 JPEG</td>
+    <td><span class="badge badge-ok">满足</span></td>
+    <td>ESP-WHO 官方支持，硬件 JPEG 加速</td>
+  </tr>
+  <tr>
+    <td>ST7789 1.5" 240x240</td>
+    <td>SPI 显示</td>
+    <td><span class="badge badge-warn">勉强</span></td>
+    <td>屏幕小，图片只能缩略图预览；文字留言没问题</td>
+  </tr>
+  <tr>
+    <td>MAX98357A 喇叭</td>
+    <td>I2S 输出</td>
+    <td><span class="badge badge-ok">满足</span></td>
+    <td>TTS 播报留言、播放语音留言</td>
+  </tr>
+  <tr>
+    <td>INMP441 麦克风</td>
+    <td>I2S 输入</td>
+    <td><span class="badge badge-ok">满足</span></td>
+    <td>语音留言录制（如果机器人也能录留言）</td>
+  </tr>
+  <tr>
+    <td>SD 卡</td>
+    <td>未插卡（0x107）</td>
+    <td><span class="badge badge-warn">需要</span></td>
+    <td>缓存下载的图片/语音、存人脸特征库</td>
+  </tr>
+  <tr>
+    <td>WS2812B LED</td>
+    <td>1 颗</td>
+    <td><span class="badge badge-ok">满足</span></td>
+    <td>状态指示灯（新消息/识别中等）</td>
+  </tr>
+</table>
+
+<h3>5.2 Flash 分区规划</h3>
+<p>当前分区表：</p>
+<table>
+  <tr>
+    <th>分区</th>
+    <th>偏移</th>
+    <th>大小</th>
+    <th>当前用途</th>
+    <th>扩展后用途</th>
+  </tr>
+  <tr>
+    <td>factory (app)</td>
+    <td>0x10000</td>
+    <td>5MB</td>
+    <td>固件 ~1.9MB (38.7%)</td>
+    <td>固件 + 人脸模型 ~3.1MB (62%)，够用</td>
+  </tr>
+  <tr>
+    <td>model (srmodels)</td>
+    <td>0x520000</td>
+    <td>3MB</td>
+    <td>wakenet+multinet ~2.5MB</td>
+    <td>不变（人脸模型编入固件不放这）</td>
+  </tr>
+  <tr>
+    <td>spiffs</td>
+    <td>0x820000</td>
+    <td>~8MB</td>
+    <td>未使用</td>
+    <td>人脸特征库 + 留言缓存 + 配置</td>
+  </tr>
+</table>
+
+<div class="card card-green">
+  <p><strong>Flash 资源充足</strong>：人脸识别模型 ~1.2MB 编入固件后，factory 分区 5MB 还剩 ~1.9MB 空间。SPIFFS 有 8MB 可用于存储特征库、留言缓存。PSRAM 8MB 完全够用推理缓冲。</p>
+</div>
+
+<h3>5.3 需要补充的硬件</h3>
+<table>
+  <tr>
+    <th>物品</th>
+    <th>用途</th>
+    <th>成本</th>
+    <th>必要性</th>
+  </tr>
+  <tr>
+    <td>MicroSD 卡 (8-32GB)</td>
+    <td>缓存留言图片/语音、存人脸特征</td>
+    <td>~¥15-25</td>
+    <td><span class="badge badge-risk">必须</span>（目前没插卡）</td>
+  </tr>
+  <tr>
+    <td>5V/2A 电源适配器</td>
+    <td>交流供电（用户说不用电池）</td>
+    <td>~¥15</td>
+    <td><span class="badge badge-ok">已有</span>（USB 供电）</td>
+  </tr>
+  <tr>
+    <td>云服务器</td>
+    <td>MQTT Broker + 文件存储</td>
+    <td>~¥5-10/月</td>
+    <td><span class="badge badge-risk">必须</span></td>
+  </tr>
+</table>
+
+<h2 id="risk">六、风险矩阵与替代方案</h2>
+
+<table>
+  <tr>
+    <th>风险点</th>
+    <th>概率</th>
+    <th>影响</th>
+    <th>缓解措施</th>
+  </tr>
+  <tr>
+    <td><strong>ESP-WHO 与 Arduino 不兼容</strong></td>
+    <td>高</td>
+    <td>高</td>
+    <td>方案 A 提取组件；若失败则退方案 C 云端识别</td>
+  </tr>
+  <tr>
+    <td><strong>人脸识别精度不足</strong></td>
+    <td>中</td>
+    <td>中</td>
+    <td>3 人小库+室内固定光照，精度足够；室外/暗光场景需补光</td>
+  </tr>
+  <tr>
+    <td><strong>240x240 屏幕太小看不清图片</strong></td>
+    <td>确定</td>
+    <td>低</td>
+    <td>图片缩略图 + 语音描述；未来可升级 2.0/2.4 寸屏</td>
+  </tr>
+  <tr>
+    <td><strong>WiFi 同时跑 MQTT + HTTPS 对话</strong></td>
+    <td>低</td>
+    <td>中</td>
+    <td>ESP32-S3 WiFi 能力够；错峰执行（识别时不对话）</td>
+  </tr>
+  <tr>
+    <td><strong>APP 开发门槛</strong></td>
+    <td>中</td>
+    <td>中</td>
+    <td>Flutter 上手快；也可先用微信小程序做 MVP（不支持 BLE 但可 WiFi 配网）</td>
+  </tr>
+  <tr>
+    <td><strong>云端持续成本</strong></td>
+    <td>低</td>
+    <td>低</td>
+    <td>阿里云 IoT 套餐 ~5 元/月；或免费 EMQX 验证</td>
+  </tr>
+  <tr>
+    <td><strong>人脸识别与 esp-sr 抢音频/摄像头</strong></td>
+    <td>低</td>
+    <td>中</td>
+    <td>人脸识别只在"回家触发"时跑，与唤醒词不冲突；摄像头 JPEG 模式复用</td>
+  </tr>
+</table>
+
+<h2 id="roadmap">七、实施路线图建议</h2>
+
+<p>建议分 3 期实施，每期可独立验证：</p>
+
+<div class="card card-teal">
+  <h3>第一期：人脸识别 MVP（~1 周）</h3>
+  <ul>
+    <li><strong>目标</strong>：机器人能识别 3 人身份并喊名字</li>
+    <li><strong>工作</strong>：
+      <ol>
+        <li>提取 ESP-WHO 组件集成到 PlatformIO（方案 A）</li>
+        <li>串口/Web 注册 3 张人脸（调试阶段先不走 APP）</li>
+        <li>上电后或 BOOT 键触发 → 拍照 → 识别 → TTS "欢迎回来，主人"</li>
+        <li>Flash 分区调整 + 编译验证</li>
+      </ol>
+    </li>
+    <li><strong>验证标准</strong>：3 人随机站摄像头前，识别准确率 >90%，延迟 <2s</li>
+  </ul>
+</div>
+
+<div class="card card-blue">
+  <h3>第二期：云端消息中继（~1-2 周）</h3>
+  <ul>
+    <li><strong>目标</strong>：APP 能发留言，机器人能收能播</li>
+    <li><strong>工作</strong>：
+      <ol>
+        <li>阿里云 IoT 平台开通 + MQTT Broker 配置</li>
+        <li>ESP32 端集成 PubSubClient，订阅消息 topic</li>
+        <li>HTTP 文件服务（阿里云 OSS 或简单 VPS）存图片/语音</li>
+        <li>机器人收到消息 → SD 卡缓存 → 识别到对应主人时 TTS 播报 + LCD 显示</li>
+      </ol>
+    </li>
+    <li><strong>验证标准</strong>：手机发一条文字留言，对应主人回家后机器人自动播报</li>
+  </ul>
+</div>
+
+<div class="card card-purple">
+  <h3>第三期：手机 APP 完整版（~1-2 周）</h3>
+  <ul>
+    <li><strong>目标</strong>：完整 APP，家人能用</li>
+    <li><strong>工作</strong>：
+      <ol>
+        <li>Flutter APP 框架 + BLE 配网</li>
+        <li>人脸注册页（拍照上传）</li>
+        <li>留言中心（文字/语音/图片）</li>
+        <li>任务提醒 + 设置页</li>
+      </ol>
+    </li>
+    <li><strong>验证标准</strong>：家人从 APP 发送留言到机器人播报，全流程 &lt;10s</li>
+  </ul>
+</div>
+
+<h2 id="conclusion">八、结论</h2>
+
+<div class="verdict verdict-ok">
+  可行性评估：可以做，但有 1 个关键风险点需先验证
+</div>
+
+<table>
+  <tr>
+    <th>维度</th>
+    <th>结论</th>
+    <th>信心</th>
+  </tr>
+  <tr>
+    <td>人脸识别</td>
+    <td>ESP-WHO 官方框架支持 OV3660 + ESP32-S3，模型小、精度够、本地运行<br><strong>但 Arduino/PlatformIO 集成是关键风险点</strong>，需先验证方案 A 可行性</td>
+    <td>80%（方案 A 失败可退方案 C）</td>
+  </tr>
+  <tr>
+    <td>云端消息</td>
+    <td>MQTT + HTTP 标准方案，ESP32-S3 资源够用，阿里云低成本</td>
+    <td>95%</td>
+  </tr>
+  <tr>
+    <td>手机 APP</td>
+    <td>Flutter 方案成熟，社区案例多，1-2 周可出可用版本</td>
+    <td>90%</td>
+  </tr>
+  <tr>
+    <td>硬件</td>
+    <td>现有硬件基本够用，仅需补一张 SD 卡（~¥20）</td>
+    <td>100%</td>
+  </tr>
+  <tr>
+    <td>总成本</td>
+    <td>SD 卡 ¥20 + 云服务 ¥5-10/月 + APP 开发时间 1-2 周</td>
+    <td>-</td>
+  </tr>
+</table>
+
+<div class="card card-amber">
+  <h3>建议的第一步行动</h3>
+  <p>在正式决策前，建议先花半天做一个 <strong>"ESP-WHO 组件提取验证"</strong>——在现有 PlatformIO 项目里尝试集成 esp-face 库，编译一个最小人脸检测 demo。如果编译通过并能跑检测，方案 A 就确认可行，后续按路线图推进。如果编译失败且排查后确认无法集成，则退方案 C（云端识别），虽然牺牲延迟和离线能力，但功能仍然完整。</p>
+  <p>这个验证不需要改现有代码，只需新建一个测试分支即可，风险可控。</p>
+</div>
+
+<div class="footer">
+  本报告基于 Web 调研（ESP-WHO 官方文档/GitHub、ESP32-S3 人脸识别实测数据、萤石 RK3 产品分析、Flutter IoT 开发案例）及项目 MEMORY.md 历史信息编写。<br>
+  生成时间：2026-08-17 | 项目版本：P6-disp-v1h
+</div>
+
+</body>
+</html>

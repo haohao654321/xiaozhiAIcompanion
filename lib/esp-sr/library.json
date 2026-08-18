@@ -1,0 +1,8 @@
+{
+    "name": "esp-sr",
+    "version": "1.9.5",
+    "description": "Espressif esp-sr (wakenet only) - prebuilt static libs for ESP32-S3, model loaded from 'model' flash partition. Source: github.com/espressif/esp-sr tag v1.9.5",
+    "frameworks": "arduino",
+    "platforms": "espressif32",
+    "include": "include"
+}

@@ -1,0 +1,8 @@
+{
+    "name": "esp-dsp-subset",
+    "version": "1.4.10",
+    "description": "Minimal esp-dsp subset (fft2r/fft4r/dotprod/sqrt) required by esp-sr wakenet. Source: github.com/espressif/esp-dsp tag v1.4.10",
+    "frameworks": "arduino",
+    "platforms": "espressif32",
+    "include": ["include/fft", "include/dotprod", "include/sqrt", "include/common"]
+}

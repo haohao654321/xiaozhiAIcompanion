@@ -1,0 +1,12 @@
+# Name,   Type, SubType,  Offset,    Size,     Flags
+# P4-1: model partition for esp-sr wakenet (srmodels.bin @ 0x520000)
+# factory 11MB -> 5MB; spiffs moved (unused); app start 0x10000 unchanged
+nvs,      data, nvs,      0x9000,    0x6000,
+phy_init, data, phy,      0xf000,    0x1000,
+factory,  app,  factory,  0x10000,   0x500000,
+coredump, data, coredump, 0x510000,  0x10000,
+# P5: model partition 1MB -> 3MB (srmodels.bin: wakenet + multinet mn5q8)
+model,    data, spiffs,   0x520000,  0x300000,
+# P7a: fr partition 128KB - esp-dl face ID persistent (3 persons x ~1KB each)
+fr,       data, spiffs,   0x820000,  0x20000,
+spiffs,   data, spiffs,   0x840000,  0x7C0000,

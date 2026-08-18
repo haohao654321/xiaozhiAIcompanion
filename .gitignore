@@ -1,0 +1,37 @@
+# ── PlatformIO / 构建产物 ──
+.pio/
+build/
+*.o
+*.a
+*.elf
+*.bin.map
+firmware.bin
+firmware.elf
+.pioenvs/
+.piolibdeps/
+
+# ── IDE 配置 (个人化, 不入库) ──
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── 凭据 / 密钥 (绝不提交!) ──
+# system_config.h 含 BAIDU/ZHIPU API key 和 WiFi 密码, 不提交; 用 system_config.example.h 模板占位
+# board_config.h 是纯引脚定义(无敏感), 正常提交
+src/config/system_config.h
+*.key
+*.pem
+.env
+config.local.h
+
+# ── WorkBuddy 项目数据 (含记忆/会话, 不公开) ──
+.workbuddy/
+
+# ── Python ──
+__pycache__/
+*.pyc
+
+# ── 系统 ──
+.DS_Store
+Thumbs.db
