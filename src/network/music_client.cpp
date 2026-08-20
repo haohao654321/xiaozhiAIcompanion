@@ -110,9 +110,12 @@ bool MusicClient::fetchSong(const String& songName, int16_t** outBuf,
     }
 
     // v2a: 服务端返回 base64 文本 (400KB b64 ≈ 300KB PCM, 15s 小星星)
-    // 先读全部 base64 文本到 PSRAM (容量给满: 上限 1.5MB b64), 再解码
-    int totalLen = http.getSize();              // b64 文本长度
-    if (totalLen <= 0) totalLen = 16000 * 2 * 120 / 3 * 4;   // 兜底 120s b64
+    // v2c: 阿里云 FC 返回 Transfer-Encoding: chunked 无 Content-Length,
+    //   http.getSize() 返回 -1 → 兜底 2.5MB 但实际读到 chunked 尾帧多余字节
+    //   → base64 解码混入非法字符。改: 分配上限 1.5MB, 读到流关闭为止。
+    const int MAX_B64_BYTES = 16000 * 2 * 60 / 3 * 4;   // 60s b64 ≈ 1.28MB, 给 1.5MB 余量
+    int totalLen = http.getSize();
+    if (totalLen <= 0 || totalLen > MAX_B64_BYTES) totalLen = MAX_B64_BYTES;
 
     uint8_t* b64buf = (uint8_t*)heap_caps_malloc(totalLen + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!b64buf) {
@@ -121,23 +124,43 @@ bool MusicClient::fetchSong(const String& songName, int16_t** outBuf,
         return false;
     }
 
-    // 流式下载 base64 文本
+    // 流式下载 base64 文本 (支持 chunked, 读到流关闭)
     WiFiClient* stream = http.getStreamPtr();
     uint8_t* p = b64buf;
     int total = 0;
     uint32_t timeout = millis() + MUSIC_DOWNLOAD_TIMEOUT_MS;
+    int idleMs = 0;                     // 连续无数据毫秒数, 超 500ms 认为结束
 
     while (http.connected() && millis() < timeout && total < totalLen) {
         int avail = stream->available();
         if (avail > 0) {
             int toRead = (avail < totalLen - total) ? avail : (totalLen - total);
-            int rd = stream->read(p, toRead);
+            int rd = stream->read(p + total, toRead);
             if (rd > 0) {
-                p += rd;
                 total += rd;
+                idleMs = 0;
             }
         } else {
-            delay(2);
+            if (total > 0 && idleMs >= 500) break;  // 已有数据 + 500ms 无新数据 → 下载完成
+            idleMs += 5;
+            delay(5);
+        }
+    }
+
+    // 如果已连接但数据稳定了, 再等一等最终数据
+    if (http.connected() && total > 0) {
+        idleMs = 0;
+        while (http.connected() && millis() < timeout && total < totalLen) {
+            int avail = stream->available();
+            if (avail > 0) {
+                int toRead = (avail < totalLen - total) ? avail : (totalLen - total);
+                int rd = stream->read(p + total, toRead);
+                if (rd > 0) { total += rd; idleMs = 0; }
+            } else {
+                if (idleMs >= 500) break;
+                idleMs += 5;
+                delay(5);
+            }
         }
     }
     http.end();
