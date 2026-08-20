@@ -10,6 +10,7 @@
 #include "../config/system_config.h"
 #include <HTTPClient.h>
 #include <WiFi.h>
+#include <ArduinoJson.h>   // P10 增强: 解析 JSON 响应 (memory_update 字段)
 
 String AskClient::_escapeJSON(const String& s) {
     String out;
@@ -27,8 +28,10 @@ String AskClient::_escapeJSON(const String& s) {
     return out;
 }
 
-bool AskClient::ask(const String& userText, String& outReply, const String& memory) {
+bool AskClient::ask(const String& userText, String& outReply,
+                     String& outMemoryUpdate, const String& memory) {
     outReply = "";
+    outMemoryUpdate = "";
     if (userText.length() == 0) {
         Serial.println("[ASK] ERROR: empty input");
         return false;
@@ -40,7 +43,7 @@ bool AskClient::ask(const String& userText, String& outReply, const String& memo
 
     // v1w: JSON body 加 history 字段
     // v1z: P10 加 memory 字段 (长期记忆注入)
-    // {"text":"...","history":[["u1","a1"],...],"memory":"..."}
+    // P10 增强: 云端返回 {"reply":"...","memory_update":"..."}
     String body = "{\"text\":\"";
     body += _escapeJSON(userText);
     body += "\"";
@@ -92,13 +95,32 @@ bool AskClient::ask(const String& userText, String& outReply, const String& memo
         return false;
     }
 
-    // 安全截断 (回复 ≤50字 ≈150字节; ESP32 TTS 上限 CONV_TTS_MAX_CHARS=100字)
-    size_t maxBytes = (size_t)CONV_TTS_MAX_CHARS * 3;
-    if (resp.length() > maxBytes) {
-        resp = resp.substring(0, maxBytes);
+    // P10 增强: 解析 JSON 响应 {"reply":"...","memory_update":"..."}
+    // 兼容旧版纯文本响应 (没有 JSON 外壳)
+    String replyText = resp;
+    if (resp.startsWith("{")) {
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, resp);
+        if (!err) {
+            const char* r = doc["reply"];
+            if (r && strlen(r) > 0) {
+                replyText = String(r);
+            }
+            const char* mu = doc["memory_update"];
+            if (mu && strlen(mu) > 0) {
+                outMemoryUpdate = String(mu);
+                Serial.printf("[ASK] memory_update: \"%s\"\n", String(mu).substring(0, 60).c_str());
+            }
+        }
     }
 
-    outReply = resp;
+    // 安全截断 (回复 ≤50字 ≈150字节; ESP32 TTS 上限 CONV_TTS_MAX_CHARS=100字)
+    size_t maxBytes = (size_t)CONV_TTS_MAX_CHARS * 3;
+    if (replyText.length() > maxBytes) {
+        replyText = replyText.substring(0, maxBytes);
+    }
+
+    outReply = replyText;
     Serial.printf("[ASK] OK: \"%s\"\n", outReply.substring(0, 80).c_str());
     return true;
 }

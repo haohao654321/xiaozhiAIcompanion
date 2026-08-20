@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.dirname(_HERE))
 from knowledge_server import (
     fetch_weather_text,
     fetch_trains_text,
-    ask_llm,
+    ask_llm_v2,
     render_pcm,
     find_song,
     build_wav,
@@ -197,10 +197,14 @@ def handler(event, context):
         history = data.get("history", []) or []
         # P10: 长期记忆 (ESP32 SD 卡条目, 注入 system prompt)
         memory = data.get("memory", "") or ""
-        reply = ask_llm(text, history, memory)
-        if reply is None:
-            reply = "这个问题我想不起来了"
-        return _resp(reply)
+        # P10 增强: ask_llm_v2 返回 (reply, memory_update)
+        reply, mem_update = ask_llm_v2(text, history, memory)
+        # 返回 JSON 含 memory_update 字段, ESP32 解析后自动存 SD
+        result = {"reply": reply or "这个问题我想不起来了"}
+        if mem_update:
+            result["memory_update"] = mem_update
+        return _resp(json.dumps(result, ensure_ascii=False),
+                     content_type="application/json; charset=utf-8")
 
     # ── 404 ──
     return _resp("Not Found: %s %s" % (method, path), status=404)

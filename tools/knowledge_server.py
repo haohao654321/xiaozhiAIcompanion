@@ -985,8 +985,16 @@ def ask_llm(user_text, history=None, memory=""):
     history: ESP32 传来的对话历史, [[user1, assistant1], [user2, assistant2], ...]
     memory:  P10 长期记忆 (ESP32 SD 卡"记住XXX"条目, 多行), 注入 system prompt
     """
+    reply, mem_update = ask_llm_v2(user_text, history, memory)
+    return reply
+
+def ask_llm_v2(user_text, history=None, memory=""):
+    """P10 增强版: 返回 (reply, memory_update)
+    memory_update: 本轮对话中 LLM 自动提取的用户个人事实 (如"用户喜欢火锅"),
+                   空串 = 无可提取; ESP32 端收到后自动存 SD
+    """
     if not user_text or not user_text.strip():
-        return "我没听清，请再说一遍"
+        return "我没听清，请再说一遍", ""
 
     # v1w: 地名听错纠错 — 进 LLM 前先把"扎嘎纳"这类错词替换成"扎尕那"
     user_text = _fix_place_names(user_text)
@@ -1081,17 +1089,17 @@ def ask_llm(user_text, history=None, memory=""):
     print("[Ask] Q: %s (tools: %s)" % (user_text[:80], [t.get("type") if t.get("type") != "function" else t["function"]["name"] for t in tools]))
     resp = _glm_post(data)
     if not resp:
-        return "这个问题我想不起来了，网络可能不太好"
+        return "这个问题我想不起来了，网络可能不太好", ""
 
     # 检查 API 错误
     if resp.get("error"):
         msg = resp["error"].get("message", "unknown")
         print("[Ask] GLM API error: %s" % msg)
-        return "这个问题我答不上来"
+        return "这个问题我答不上来", ""
 
     choices = resp.get("choices", [])
     if not choices:
-        return "这个问题我答不上来"
+        return "这个问题我答不上来", ""
 
     msg = choices[0].get("message", {})
     finish_reason = choices[0].get("finish_reason", "")
@@ -1158,17 +1166,17 @@ def ask_llm(user_text, history=None, memory=""):
         }
         resp2 = _glm_post(data2)
         if not resp2 or resp2.get("error"):
-            return "查不到了，网络可能不太好"
+            return "查不到了，网络可能不太好", ""
         choices2 = resp2.get("choices", [])
         if not choices2:
-            return "查不到了"
+            return "查不到了", ""
         reply = choices2[0].get("message", {}).get("content", "").strip()
     else:
         # B 层: web_search 兜底, 模型直接搜了生成回复
         reply = msg.get("content", "").strip()
 
     if not reply:
-        return "这个问题我答不上来"
+        return "这个问题我答不上来", ""
 
     reply = _strip_emoji(reply)
     reply = _strip_evade_phrase(reply)
@@ -1183,7 +1191,68 @@ def ask_llm(user_text, history=None, memory=""):
         # 铁律兜底: ≥100 仍截 (防御性, 正常不会到这)
         reply = reply[:100]
     print("[Ask] A: %s" % reply[:60])
-    return reply
+
+    # ── P10 增强: 自动提取用户个人事实 (无需用户说"记住") ──
+    # 轻量 GLM 调用: 判断本轮对话是否透露出用户的个人信息 (名字/喜好/职业/家庭等),
+    # 有则返回单条"用户XXX"格式记忆, 无则返回空。ESP32 端收到后自动存 SD。
+    mem_update = _extract_memory(user_text, history, memory)
+    return reply, mem_update
+
+
+def _extract_memory(user_text, history=None, memory=""):
+    """P10 增强: 从对话中自动提取用户个人事实 → 记忆条目 (空串=无)
+
+    只提取"用户亲口透露的个人信息": 姓名/称呼/喜好/厌恶/职业/家庭/习惯/常去地点等。
+    判空规则: 提取类问题 ("我叫什么"是我在问不是我在说)、泛指 ("我不喜欢下雨"里
+    "下雨"是天气不是个人事实? 不, 这是偏好, 保留)、临时/一次性 (不提)。
+    返回统一格式 "用户XXX" (如 "用户喜欢火锅" "用户叫小张"), 上限 40 字。
+    """
+    try:
+        # 整合上下文供判断 (对话文本 + 已存记忆, 用来判重/去重复)
+        ctx = user_text
+        if history and isinstance(history, list):
+            parts = []
+            for pair in history:
+                if isinstance(pair, (list, tuple)) and len(pair) >= 2:
+                    parts.append(str(pair[0]))
+            if parts:
+                ctx = " | ".join(parts) + " | " + user_text
+        mem_text = str(memory or "").strip()
+
+        data = {
+            "model": ZHIPU_MODEL,
+            "messages": [
+                {"role": "system", "content":
+                 "你是记忆提取器。从用户说的话里提取'用户亲口透露的个人信息'，用于长期记忆。"
+                 "提取范围：名字/称呼、喜欢/讨厌的东西、职业、家庭成员、习惯、常去地点、口头承诺。"
+                 "不提取：问题类（'我叫什么'是在问）、泛指天气、临时事件（'我今天买了菜'不存）、"
+                 "AI回答内容（只从用户发言提取）。"
+                 "输出规则：只输出一条记忆，格式'用户XXX'（如'用户喜欢火锅''用户叫小张'），"
+                 "≤40字；没有可提取的就只输出'无'。不要加标点、不要解释。"},
+                {"role": "user", "content":
+                 "已存记忆: %s\n对话: %s\n提取结果:" % (mem_text[:400] or "无", ctx[:500])},
+            ],
+            "temperature": 0.0,
+            "max_tokens": 64,
+        }
+        resp = _glm_post(data)
+        if not resp:
+            return ""
+        cand = (resp.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
+        cand = cand.replace("\n", "").strip()
+        print("[Mem] extract raw: %r" % cand[:60])
+        if not cand or cand == "无" or "无" in cand[:4]:
+            return ""
+        # 与已存记忆判重 (截断近似匹配: 前 12 字相同视为重复)
+        if mem_text:
+            for line in mem_text.splitlines():
+                if line.strip() and cand[:12] in line:
+                    print("[Mem] dup with existing, skipped")
+                    return ""
+        return cand[:40]
+    except Exception as e:
+        print("[Mem] extract err: %s" % e)
+        return ""
 
 def _strip_evade_phrase(text):
     """检测 LLM 的推脱尾巴 ("请去XX查""具体请查看官网") → 只砍尾巴, 保留前面的数据

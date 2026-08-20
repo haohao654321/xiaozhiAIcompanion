@@ -291,12 +291,21 @@ void ConversationManager::_doSTT() {
     //   失败 → 降级走裸 LLM (断网/网关不可用时的兜底)
     {
         String askReply;
+        String memUpdate;
         // P10: /ask 带长期记忆 (SD 卡里的"记住XXX"条目 → 云端注入 prompt)
-        if (_ask.ask(_sttText, askReply, _memory.text())) {
+        // P10 增强: 云端返回 memory_update (自动提取的个人事实) → 自动存 SD
+        if (_ask.ask(_sttText, askReply, memUpdate, _memory.text())) {
             Serial.printf("[CONV] /ask OK -> TTS\n");
             _llmReply = askReply;
             // v1w: 对话成功 → 压入历史 (user问 + assistant答)
             _ask.pushHistory(_sttText, _llmReply);
+            // P10 增强: 云端自动提取的记忆, 存 SD (静默, 不打断播报)
+            if (memUpdate.length() > 0) {
+                if (_memory.add(memUpdate)) {
+                    Serial.printf("[CONV] memory auto-saved: \"%s\"\n",
+                                  memUpdate.substring(0, 60).c_str());
+                }
+            }
             _enterState(CONV_TTS);
             return;
         }
