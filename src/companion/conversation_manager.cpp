@@ -558,9 +558,13 @@ bool ConversationManager::_handleLocalAction(RouteAction act) {
     case ROUTE_REMEMBER: {
         _spk->playTone(880, 90);                 // 高音反馈
         if (_memory.available() && _pendingMemory.length() > 0) {
-            _memory.add(_pendingMemory);
-            ui.showMessage("记住了", 1500);
-            Serial.printf("[CONV] Memory saved: \"%s\"\n", _pendingMemory.c_str());
+            if (_memory.add(_pendingMemory)) {
+                ui.showMessage("记住了", 1500);
+                Serial.printf("[CONV] Memory saved: \"%s\"\n", _pendingMemory.c_str());
+            } else {
+                ui.showMessage("记住了", 1500);   // 重复也是记住了
+                Serial.printf("[CONV] Memory already exists: \"%s\"\n", _pendingMemory.c_str());
+            }
         } else {
             ui.showMessage("没记住", 1500);      // 无 SD 卡
             Serial.println("[CONV] Memory save FAILED (SD unavailable)");
@@ -647,6 +651,9 @@ ConversationManager::RouteAction ConversationManager::_parseRoute(
             if (idx >= 0) {
                 String c = text.substring(idx + strlen(kw));
                 c.trim();
+                // 去末尾标点 (统一格式: "用户喜欢火锅" vs "用户喜欢火锅。")
+                while (c.length() > 0 && (c.endsWith("。") || c.endsWith("！") || c.endsWith("？") || c.endsWith("，") || c.endsWith(".") || c.endsWith("!") || c.endsWith("?") || c.endsWith(",") || c.endsWith(" ")))
+                    c.remove(c.length() - 1);
                 if (c.length() >= 2 && c != "你") {             // "我喜欢你"不存(空泛), "我喜欢听歌"→存
                     _pendingMemory = "用户" + String(kw) + c;
                     Serial.printf("[ROUTE] REMEMBER (\"%s\")\n", _pendingMemory.c_str());
