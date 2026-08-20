@@ -29,7 +29,7 @@
 #include "../network/llm_client.h"
 #include "../network/tts_client.h"
 #include "../network/music_client.h"   // P7b: 云端迷你音乐 (HTTP 回传 PCM)
-#include "../network/weather_client.h"  // P8a: 天气查询 (知识服务网关)
+#include "../network/ask_client.h"    // P8e: LLM 联网问答 (web_search 兜底 + function calling)
 #include "../network/vision_client.h"     // P4.5: GLM-4V-Flash 视觉理解
 #include "../camera/capture_manager.h"    // P4.5: 拍照取帧
 #include "../audio_in/wake_word.h"        // P4-1: 离线唤醒词
@@ -88,7 +88,7 @@ private:
     TTSClient  _tts;
     VisionClient _vision;
     MusicClient _music;   // P7b: 云端迷你音乐
-    WeatherClient _weather;  // P8a: 天气查询 (知识服务网关)
+    AskClient   _ask;      // P8e: LLM 联网问答 (B+C 合一) — v1v: 天气等查询类全走 /ask, WeatherClient 已退役
 
     // 状态
     ConvState  _state = CONV_IDLE;
@@ -136,11 +136,10 @@ private:
 
     void _cmdCleanup(bool toWait);            // P6: 命令后回等待或睡眠
 
-    // ── P8d: STT 文本路由 (替代 MN 命令词 — 用户说话随意, 固定短语命中不了) ──
-    //   唤醒 → VAD 录音 → STT → 文本关键词路由 → 本地动作/真查询 / 放行 LLM
+    // ── P8d→v1v: STT 本地动作路由 (查询类全走 /ask 云函数, 本地只留"肢体动作") ──
+    //   天气/地点/火车/百科 → /ask (云函数 get_weather function calling 已覆盖)
     enum RouteAction : uint8_t {
-        ROUTE_NONE = 0,     // 无命中 → 放行 LLM
-        ROUTE_WEATHER,      // 天气真查询 (城市/天数/穿衣 由解析参数决定)
+        ROUTE_NONE = 0,     // 无命中 → 放行 /ask (云函数)
         ROUTE_MUSIC,        // 云端音乐
         ROUTE_PHOTO,        // 拍照存 SD
         ROUTE_LOOK,         // 看看 → 视觉对话 (GLM-4V)
@@ -148,10 +147,8 @@ private:
         ROUTE_SLEEP,        // 睡觉
     };
     bool        _routeText(const String& text);                    // 关键词路由入口 (返回 true=已处理)
-    RouteAction _parseRoute(const String& text, String& city,      // 关键词+参数解析
-                            int& days, bool& clothes);
-    bool        _handleLocalAction(RouteAction act, const String& city,
-                                   int days, bool clothes);        // 执行路由动作
+    RouteAction _parseRoute(const String& text);                   // 关键词+参数解析
+    bool        _handleLocalAction(RouteAction act);               // 执行本地动作
 
     // P7b: 钢琴旋律 (小星星, 非阻塞逐音驱动) — 云端音乐下载失败时的降级
     void        _playPianoMelody();

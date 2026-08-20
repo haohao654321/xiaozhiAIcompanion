@@ -52,7 +52,7 @@ bool MusicClient::fetchSong(const String& songName, int16_t** outBuf,
     Serial.printf("[MUSIC] GET %s\n", url.c_str());
 
     HTTPClient http;
-    // 本地/公网 HTTP (非 HTTPS) — 不加密, 音乐无敏感数据
+    // 云函数 HTTPS (2026-08-19 起) — 不传 CA 默认跳过证书校验
     if (!http.begin(url)) {
         Serial.println("[MUSIC] HTTP begin failed");
         return false;

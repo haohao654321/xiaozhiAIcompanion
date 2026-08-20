@@ -40,6 +40,9 @@ public:
     void setSpeechThreshold(double v) { if (v >= 80.0 && v <= 2000.0) _speechThr = v; }
     double getSpeechThreshold() const { return _speechThr; }
 
+    /** v1s: 重置噪声基底 (唤醒后调: 提示音余韵会拉高 nf, 导致动态阈值过高吞话) */
+    void resetNoiseFloor() { _envNoiseFloor = 0.0; }
+
     bool isRecording() const { return _state == DemoState::RECORDING; }
 
     // ── P4: 对话录音 (VAD 触发, 非 demo) ──

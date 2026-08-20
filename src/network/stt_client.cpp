@@ -11,6 +11,25 @@
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 
+// v1w: 百度热词参数 URL encode (中文 UTF-8 → %xx%xx%xx)
+// 逗号不编码 (百度用逗号分词), 其他非 ASCII 字节按 %HH 编码
+static String urlEncodeHotword(const char* s) {
+    String out;
+    out.reserve(strlen(s) * 3);  // 最坏全中文: 每字节3字符
+    for (const unsigned char* p = (const unsigned char*)s; *p; p++) {
+        if (*p == ',' || (*p >= '0' && *p <= '9') ||
+            (*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
+            *p == '-' || *p == '_' || *p == '.') {
+            out += (char)*p;
+        } else {
+            char hex[4];
+            snprintf(hex, sizeof(hex), "%%%02X", *p);
+            out += hex;
+        }
+    }
+    return out;
+}
+
 String STTClient::recognize(const int16_t* pcm, uint32_t samples) {
     if (!pcm || samples == 0) {
         Serial.println("[STT] ERROR: empty PCM data");
@@ -23,7 +42,12 @@ String STTClient::recognize(const int16_t* pcm, uint32_t samples) {
     HTTPClient http;
     // RAW POST: 音频直接放 body, 参数在 URL + header
     // HTTPS 加密传输 (语音内容敏感, 不裸奔); setInsecure 跳过证书校验
+    // v1w: 加 &hotword= 热词参数 (百度 server_api 支持内联热词, dev_pid=1537 生效)
     String url = String(BAIDU_STT_URL) + "?cuid=" + BAIDU_CUID + "&dev_pid=1537";
+    // 只在配置了热词时追加 (减少 URL 长度)
+    #ifdef BAIDU_HOTWORDS
+        url += "&hotword=" + urlEncodeHotword(BAIDU_HOTWORDS);
+    #endif
     WiFiClientSecure secure;
     secure.setInsecure();
     http.begin(secure, url);

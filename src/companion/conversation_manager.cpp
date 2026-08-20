@@ -12,12 +12,13 @@
 #include "../display/display_state.h"
 #include "../led/led_controller.h"
 #include "esp_heap_caps.h"
+#include <WiFi.h>          // v1y: STT 失败时 WiFi.reconnect() 刷新链路
 #include <string.h>
 
 // v1h/v1j: 语音提示短语 (TTS per=0 度小美标准女声, 与对话回复同声线)
 const char* const ConversationManager::VP_PHRASES[] = {
     "主人您好",   // VP_GREETING   — 唤醒应答
-    "我先睡了",   // VP_SLEEP      — 超时/睡觉命令
+    "我先退下有事叫我",   // VP_SLEEP  — 超时/睡觉命令，提示后退睡
     "我在思考",   // VP_THINK_WAKE — 唤醒后问问题进入思考 (v1j)
     "我想想",     // VP_THINK_ASK  — 等待窗直接发问进入思考 (v1j)
 };
@@ -116,7 +117,12 @@ void ConversationManager::update() {
             if (!_wifi->isConnected())
                 Serial.println("[CONV] Offline: local-cmd window only");
             _enterWait(true);
-            _playVP(VP_GREETING);          // v1h: 唤醒应答 "主人您好"
+            // v1s: 唤醒后重置噪声基底 — 提示音余韵会把 nf 拉高 (如 344),
+            //   动态阈值 nf×3=1032 会把轻声说话滤成噪声 → 吞话。重置后从 0 开始学。
+            _mic->resetNoiseFloor();
+            // v1x: 唤醒应答改短提示音 (原"主人您好"1.3s语音 + 1.5s声反馈门控 = 2.8s
+            //   吞掉唤醒后第一句话 → "唤醒不灵"。短音 100ms + 门控 = 1.6s, 释放对话窗口)
+            _spk->playTone(880, 100);          // 短"叮"声唤醒反馈
             return;
         }
     }
@@ -228,6 +234,18 @@ void ConversationManager::_doSTT() {
     }
     _sttText = _stt.recognize(_recBuf, _recSamples);
 
+    // v1y: STT 失败 → WiFi 断开重连 + 再试一次 (修"长时间空闲后 SSL 假死")
+    //   errno 118 Host unreachable 常出现在设备睡眠/空闲几分钟后: WiFi 关联状态
+    //   正常 (isConnected=true) 但 TCP 链路已死。断开重连刷新链路/DNS 再试。
+    if (_sttText.length() == 0 && _wifi) {
+        Serial.println("[CONV] STT fail -> WiFi.reconnect + retry once");
+        WiFi.disconnect();
+        delay(300);
+        WiFi.reconnect();
+        delay(2000);
+        _sttText = _stt.recognize(_recBuf, _recSamples);
+    }
+
     if (_recBuf) { heap_caps_free(_recBuf); _recBuf = nullptr; }
     _recSamples = 0;
 
@@ -250,6 +268,22 @@ void ConversationManager::_doSTT() {
     //   命中 → 直接执行 (天气真数据/音乐/拍照/视觉/表情/睡觉), 不送 LLM 嘴炮
     //   动作内部负责状态转移与缓冲清理 (LOOK 需保留 _sttText 走视觉 LLM)
     if (_routeText(_sttText)) return;
+
+    // P8e: 路由未命中 → 先走 /ask 联网问答 (B+C: web_search 兜底 + function calling)
+    //   成功 → 约50字纯文本直接进 TTS, 不经本地裸 LLM
+    //   失败 → 降级走裸 LLM (断网/网关不可用时的兜底)
+    {
+        String askReply;
+        if (_ask.ask(_sttText, askReply)) {
+            Serial.printf("[CONV] /ask OK -> TTS\n");
+            _llmReply = askReply;
+            // v1w: 对话成功 → 压入历史 (user问 + assistant答)
+            _ask.pushHistory(_sttText, _llmReply);
+            _enterState(CONV_TTS);
+            return;
+        }
+        Serial.println("[CONV] /ask failed, fallback to local LLM");
+    }
 
     _enterState(CONV_LLM);
 }
@@ -438,9 +472,8 @@ void ConversationManager::_failWait() {
     _enterWait();
 }
 
-// ── P8d: 本地动作执行 (原 MN 命令动作复用, 触发源改为 STT 文本路由) ──
-bool ConversationManager::_handleLocalAction(RouteAction act, const String& city,
-                                             int days, bool clothes) {
+// ── P8d: 本地动作执行 (触发源: STT 文本路由; v1v 起仅本地"肢体动作", 查询类已交 /ask) ──
+bool ConversationManager::_handleLocalAction(RouteAction act) {
     switch (act) {
     case ROUTE_PHOTO: {
         _spk->playTone(659, 90);
@@ -488,39 +521,6 @@ bool ConversationManager::_handleLocalAction(RouteAction act, const String& city
         _cmdCleanup(false);
         return true;
     }
-    // ── P8a: 天气/穿衣 → 知识服务网关查真数据 (不再走 LLM 嘴炮) ──
-    case ROUTE_WEATHER: {
-        _spk->playTone(659, 90);
-        if (!(_wifi && _wifi->isConnected())) {
-            _spk->playTone(440, 120);            // 断网
-            _cmdCleanup(true);
-            return true;
-        }
-        ui.showMessage("聆听", 3000);             // 字库: 查询中
-        Serial.printf("[CONV] Route WEATHER %s (days=%d, clothes=%d) -> knowledge server\n",
-                      city.c_str(), days, clothes);
-        String wxText;
-        if (_weather.fetch(city, days, clothes, wxText) && wxText.length() > 0) {
-            _sttText = wxText;
-            bool ok = _tts.synthesize(wxText, &_ttsBuf, &_ttsSamples);
-            if (ok && _ttsBuf && _ttsSamples > 0) {
-                ui.showMessage("好听", 5000);     // 字库: 播报中
-                _enterState(CONV_PLAYING);         // 真天气文本 → TTS 播报
-                return true;
-            }
-            Serial.println("[CONV] Weather TTS synth fail -> fallback LLM");
-        } else {
-            Serial.println("[CONV] Weather fetch fail -> fallback LLM");
-        }
-        // 降级: 走 LLM (预设问题, LLM 可能嘴炮)
-        _sttText = city;
-        _sttText += (days == 2) ? "明天" : (days == 3 ? "后天" : "今天");
-        _sttText += "天气怎么样";
-        if (clothes) _sttText += "，穿什么衣服合适";
-        _thinkVPPlayed = false;
-        _enterState(CONV_LLM);
-        return true;
-    }
     // ── P7b: 钢琴曲 — 云端下载 PCM 播放 (方案二), 失败降级本地旋律 ──
     case ROUTE_MUSIC:
         _spk->playTone(659, 90);
@@ -532,55 +532,20 @@ bool ConversationManager::_handleLocalAction(RouteAction act, const String& city
     }
 }
 
-// ── P8d: STT 文本路由入口 ──
-//   唤醒 → VAD 录音 → STT → 此处: 关键词命中 → 本地动作/真查询 (不送 LLM);
-//   未命中 → 返回 false, _doSTT 放行 LLM 自然对话
+// ── P8d→v1v: STT 文本路由入口 ──
+//   唤醒 → VAD 录音 → STT → 本地动作关键词 → 本地执行 (不送 LLM);
+//   未命中 → 返回 false, _doSTT 放行 /ask 云函数 (查询类全交给 LLM+function calling)
 bool ConversationManager::_routeText(const String& text) {
-    String city; int days = 1; bool clothes = false;
-    RouteAction act = _parseRoute(text, city, days, clothes);
+    RouteAction act = _parseRoute(text);
     if (act == ROUTE_NONE) return false;
-    return _handleLocalAction(act, city, days, clothes);
+    return _handleLocalAction(act);
 }
 
-// ── P8d: 关键词 → 动作 + 参数解析 ──
-//   优先级: 天气(真查询) > 音乐 > 看看(视觉) > 拍照 > 表情 > 睡觉
-//   城市表覆盖常见城市; 天气缺省城市西安 (用户常驻地, 记忆锚点)
-static const char* const kRouteCities[] = {
-    "北京", "上海", "广州", "深圳", "天津", "重庆",
-    "西安", "兰州", "成都", "杭州", "南京", "武汉", "苏州", "郑州", "长沙",
-    "沈阳", "青岛", "大连", "济南", "哈尔滨", "长春", "昆明", "南宁",
-    "石家庄", "太原", "合肥", "福州", "南昌", "贵阳", "海口",
-    "乌鲁木齐", "拉萨", "呼和浩特", "银川", "西宁",
-    "宁波", "厦门", "无锡", "佛山", "东莞", "珠海", "三亚",
-    "香港", "澳门", "台北",
-};
-
+// ── P8d→v1v: 关键词 → 本地动作 (天气/查询类已删, 全走 /ask 云函数) ──
+//   优先级: 音乐 > 看看(视觉) > 拍照 > 表情 > 睡觉
 ConversationManager::RouteAction ConversationManager::_parseRoute(
-        const String& text, String& city, int& days, bool& clothes) {
+        const String& text) {
     if (text.length() == 0) return ROUTE_NONE;
-    city = "";
-    days = 1;
-    clothes = false;
-
-    // ── 天气 (真查询, 最常用 → 最高优先) ──
-    static const char* const kWxKw[] = {"天气", "穿衣", "穿什么", "穿啥", "冷不冷",
-                                        "热不热", "温度", "多少度", "几度", "下雨", "下雪"};
-    bool isWx = false;
-    for (const char* kw : kWxKw) {
-        if (text.indexOf(kw) >= 0) { isWx = true; break; }
-    }
-    if (isWx) {
-        for (const char* c : kRouteCities) {
-            if (text.indexOf(c) >= 0) { city = c; break; }
-        }
-        if (city.length() == 0) city = "西安";            // 缺省城市
-        clothes = (text.indexOf("穿") >= 0);               // 穿衣: 含"穿"
-        if (text.indexOf("后天") >= 0) days = 3;           // 先查后天 (防"明天"在前)
-        else if (text.indexOf("明天") >= 0) days = 2;
-        Serial.printf("[ROUTE] WEATHER city=%s days=%d clothes=%d (\"%s\")\n",
-                      city.c_str(), days, clothes, text.c_str());
-        return ROUTE_WEATHER;
-    }
 
     // ── 音乐 (播放/唱歌) ──
     static const char* const kMusicKw[] = {"音乐", "首歌", "点歌", "钢琴", "弹", "唱"};
@@ -739,6 +704,7 @@ void ConversationManager::_cleanup() {
     _ttsBuf = nullptr;
     _sttText = "";
     _llmReply = "";
+    _ask.clearHistory();                         // v1w: 睡眠后清空对话历史
     ui.setSleep();
     _playVP(VP_SLEEP);                           // v1h: 睡眠告别 "我先睡了"
     _cooldownUntil = millis() + CONV_COOLDOWN_MS;
@@ -924,5 +890,6 @@ void ConversationManager::manualWake() {
     if (_state != CONV_IDLE && _state != CONV_WAIT) return;
     Serial.println("[CONV] Manual wake (BOOT)");
     _enterWait(true);                            // v1c: 与语音唤醒同路径 (聆听窗口)
-    _playVP(VP_GREETING);                        // v1h: 同语音唤醒, 应答 "主人您好"
+    _mic->resetNoiseFloor();                     // v1s: 同语音唤醒, 重置噪声基底
+    _spk->playTone(880, 100);                    // v1x: 同语音唤醒, 短"叮"声 (替代"主人您好")
 }

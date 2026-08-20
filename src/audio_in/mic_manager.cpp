@@ -55,7 +55,7 @@
 #define MIC_ZCR_VOICE_MAX   0.45         // 过零率上限 (滤高频电噪声)
 // 自适应噪声基底: 安静时滑动平均, 说话阈值 = max(固定, 噪声基底×3)
 #define MIC_NOISE_FLOOR_K   0.95         // 噪声基底平滑系数 (越大越慢)
-#define MIC_SPEECH_MULT      3.0          // 说话阈值 = 噪声基底 × 此系数
+#define MIC_SPEECH_MULT      1.8          // v1s: 说话阈值 = 噪声基底 × 此系数 (3.0太高吞轻声→1.8)
 // 平滑系数 (仅诊断显示, 不参与判定)
 #define MIC_SMOOTH_UP       0.55
 #define MIC_SMOOTH_DOWN     0.15
