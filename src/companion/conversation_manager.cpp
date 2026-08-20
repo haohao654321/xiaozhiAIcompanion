@@ -673,6 +673,7 @@ ConversationManager::RouteAction ConversationManager::_parseRoute(
 
     // ── 睡觉 ──
     // v1z: 增加"退下/停止/停下" (双字词可包含匹配); 单字"停"全等特判 (防"停车场/停机"误伤)
+    // v2c: STT 常返回"停。"带句号, 全等匹配不到 → 用去标点后全等
     static const char* const kSleepKw[] = {"睡觉", "晚安", "我睡了", "要睡了", "睡吧",
                                            "退下", "停止", "停下"};
     for (const char* kw : kSleepKw) {
@@ -681,8 +682,21 @@ ConversationManager::RouteAction ConversationManager::_parseRoute(
             return ROUTE_SLEEP;
         }
     }
-    if (text == "停" || text == "停了" || text == "停吧") {
-        Serial.printf("[ROUTE] SLEEP (\"%s\" exact)\n", text.c_str());
+    // 去掉中英文标点后全等比对 ("停。" "停!" "停，" → 都算"停")
+    String clean = text;
+    {
+        String out;
+        out.reserve(clean.length());
+        for (size_t i = 0; i < clean.length(); i++) {
+            char c = clean[i];
+            if (c == '。' || c == '！' || c == '？' || c == '，' || c == '.'
+                || c == '!' || c == '?' || c == ',' || c == ' ' || c == '　') continue;
+            out += c;
+        }
+        clean = out;
+    }
+    if (clean == "停" || clean == "停了" || clean == "停吧") {
+        Serial.printf("[ROUTE] SLEEP (\"%s\" exact, clean=\"%s\")\n", text.c_str(), clean.c_str());
         return ROUTE_SLEEP;
     }
 

@@ -135,10 +135,15 @@ void SpeakerManager::update() {
 //   提示音/系统自播声音会被桌面上的 INMP441 直接拾取, 若状态机把它当成
 //   "有人在说话" 会清零安静计时 → 永远进不了 THINKING/SLEEPY, 且切情绪
 //   播提示音 → 又被听到 → 再切, 形成自激。此窗口内必须忽略麦克风。
+//   v2c: 对于长时播放(TTS/音乐 2-20s), 门控最多 500ms — 用户需要能在播放中
+//   唤醒词打断, 不能整个播放期都屏蔽 WakeNet 喂入。
 uint32_t SpeakerManager::feedbackGateRemainingMs() const {
     uint32_t end = _lastPlayStart + _lastPlayMs + SPK_FEEDBACK_GATE_MS;
     uint32_t now = millis();
-    return (now < end) ? (end - now) : 0;
+    uint32_t remaining = (now < end) ? (end - now) : 0;
+    // 长时播放: 门控最多 500ms (TTS/音乐期间用户需能唤醒打断)
+    if (remaining > 500) remaining = 500;
+    return remaining;
 }
 
 // ── 播放指定频率正弦波 (非阻塞) ──
