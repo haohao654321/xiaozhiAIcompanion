@@ -24,6 +24,9 @@ src/config/system_config.h
 *.pem
 .env
 config.local.h
+# 含硬编码 key 的临时测试脚本 / 部署打包产物
+tools/test_baidu_hotword.py
+tools/serverless/*.zip
 
 # ── WorkBuddy 项目数据 (含记忆/会话, 不公开) ──
 .workbuddy/
