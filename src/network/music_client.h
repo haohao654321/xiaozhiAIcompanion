@@ -32,4 +32,6 @@ public:
 
 private:
     static String _urlEncode(const char* str);
+    /** base64 解码: b64 文本 → 原始 bytes (返回 malloc 的缓冲, 满则 null) */
+    static uint8_t* _decodeBase64(const uint8_t* b64, size_t b64Len, size_t* outBytes);
 };
