@@ -152,42 +152,48 @@ bool MusicClient::fetchSong(const String& songName, int16_t** outBuf,
         }
         int avail = stream->available();
         if (avail <= 0) { delay(2); continue; }
-        int c = stream->read();
-        if (c < 0) { delay(2); continue; }
 
-        if (crlfSkip > 0) {           // 跳过 chunk 边界的 \r\n
+        if (crlfSkip > 0) {
+            // 跳过 chunk 边界的 \r\n — 直接读掉不处理
+            stream->read();
             crlfSkip--;
             continue;
         }
         if (inChunkData) {
+            // ⚠️ v2f: 数据区必须批量 read — 单字节 read() 640KB 逐字节
+            //   + delay 太慢, 30s 超时内读不完 (实测只到 64%)。
+            //   大小行短仍逐字节, 数据区一次读尽量多。
             if (chunkRemain > 0) {
-                b64buf[total++] = (uint8_t)c;   // chunk 数据区字节 → base64
-                chunkRemain--;
-                if (chunkRemain == 0) {
-                    crlfSkip = 2;               // chunk 结尾的 \r\n
-                    inChunkData = false;
-                }
+                int want = chunkRemain;
+                int a = stream->available();
+                if (a > 0 && a < want) want = a;
+                if (want > totalLen - total) want = totalLen - total;
+                if (want > 0) {
+                    int rd = stream->read(b64buf + total, want);
+                    if (rd > 0) {
+                        total += rd;
+                        chunkRemain -= rd;
+                        if (chunkRemain == 0) {
+                            crlfSkip = 2;       // chunk 结尾的 \r\n
+                            inChunkData = false;
+                        }
+                    }
+                } else { delay(1); }
             }
             continue;
         }
-        // 读取 chunk 大小行: hex 到 \n 结束
+        // 读取 chunk 大小行: 逐字节直到 \n
+        int c = stream->read();
+        if (c < 0) { delay(2); continue; }
         if (c == '\n') {
-            // 解析已积累的大小字节
-            if (chunkSizeHexLen == 0) {
-                // 空行(单独 \n)出现说明上一个 chunk 刚结束且没走 crlfSkip? 容错跳过
-                continue;
-            }
-            // 忽略 "hex;ext" 形式的扩展 (分号后截断)
+            if (chunkSizeHexLen == 0) { continue; }  // 容错空行
             size_t hexLen = chunkSizeHexLen;
             for (size_t k = 0; k < hexLen; k++) {
                 if (chunkSizeBuf[k] == ';') { hexLen = k; break; }
             }
             long sz = strtol((const char*)chunkSizeBuf, nullptr, 16);
             chunkSizeHexLen = 0;
-            if (sz <= 0) {              // 终止 chunk: 0\r\n\r\n
-                sawTerminator = true;
-                break;
-            }
+            if (sz <= 0) { sawTerminator = true; break; }
             chunkRemain = (int)sz;
             inChunkData = true;
         } else if (c != '\r') {
