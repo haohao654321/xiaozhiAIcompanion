@@ -27,7 +27,7 @@ String AskClient::_escapeJSON(const String& s) {
     return out;
 }
 
-bool AskClient::ask(const String& userText, String& outReply) {
+bool AskClient::ask(const String& userText, String& outReply, const String& memory) {
     outReply = "";
     if (userText.length() == 0) {
         Serial.println("[ASK] ERROR: empty input");
@@ -39,7 +39,8 @@ bool AskClient::ask(const String& userText, String& outReply) {
     url += "/ask";
 
     // v1w: JSON body 加 history 字段
-    // {"text":"...","history":[["user1","assistant1"],["user2","assistant2"]]}
+    // v1z: P10 加 memory 字段 (长期记忆注入)
+    // {"text":"...","history":[["u1","a1"],...],"memory":"..."}
     String body = "{\"text\":\"";
     body += _escapeJSON(userText);
     body += "\"";
@@ -56,10 +57,15 @@ bool AskClient::ask(const String& userText, String& outReply) {
         }
         body += "]";
     }
+    if (memory.length() > 0) {
+        body += ",\"memory\":\"";
+        body += _escapeJSON(memory);
+        body += "\"";
+    }
     body += "}";
 
-    Serial.printf("[ASK] POST %s (%u bytes, history=%d)\n",
-                  url.c_str(), body.length(), _historyCount);
+    Serial.printf("[ASK] POST %s (%u bytes, history=%d, mem=%u)\n",
+                  url.c_str(), body.length(), _historyCount, memory.length());
 
     HTTPClient http;
     if (!http.begin(url)) {
@@ -114,8 +120,8 @@ void AskClient::pushHistory(const String& userText, const String& assistantReply
     _historyAssistant[idx] = assistantReply;
     Serial.printf("[ASK] History push [%d/%d]: U=\"%s\" A=\"%s\"\n",
                   _historyCount, MAX_HISTORY,
-                  _historyUser[idx].substring(0, 30).c_str(),
-                  _historyAssistant[idx].substring(0, 30).c_str());
+                  _historyUser[idx].c_str(),
+                  _historyAssistant[idx].c_str());
 }
 
 // v1w: 清空对话历史

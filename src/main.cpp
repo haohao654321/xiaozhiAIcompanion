@@ -286,6 +286,13 @@ void loop() {
             else Serial.println("[FACE] invalid threshold (need 0.1~0.99)");
         } else if (cmd == "FACETEST") {
             conversation.faceTest();
+        } else if (cmd == "MEMCLEAR") {
+            // P10: 清空 SD 长期记忆 (误存/测试后清理)
+            conversation.clearMemory();
+            Serial.println("[MEM] cleared by serial command");
+        } else if (cmd == "MEMLIST") {
+            // P10: 打印当前长期记忆内容
+            conversation.listMemory();
         } else if (cmd == "HELP") {
             Serial.println("Serial commands:");
             Serial.println("  WAKEONLY  - toggle P4.1 isolation (wake-only, no conv/cloud)");
@@ -293,6 +300,7 @@ void loop() {
             Serial.println("  VADTH=x   - set VAD speech RMS threshold 80~2000 (default 100, lower=easier)");
             Serial.println("  REG[=name] - P7a enroll current face (optional name)");
             Serial.println("  FACELIST / FACEDEL / FACECLR / FACETH=x / FACETEST - P7a face mgmt");
+            Serial.println("  MEMCLEAR / MEMLIST - P10 long-term memory clear / list (SD)");
         }
     }
 

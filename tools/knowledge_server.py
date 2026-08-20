@@ -50,6 +50,7 @@ P8e: POST /ask — "问什么都能答"
 """
 
 import argparse
+import array
 import datetime
 import gzip
 import json
@@ -121,20 +122,25 @@ def note_freq(note_name):
     return None
 
 def synth_note(freq, dur_s, amp=AMPLITUDE):
+    """合成单音符 → array('h') (16bit PCM)
+    ⚠️ 2026-08-20: list of int → array('h'), 内存降 14 倍 (云函数 128MB OOM 修复:
+    list 每样本 28B, 小星星 44 万样本 = 12MB+; array 仅 880KB)
+    """
     n = int(SAMPLE_RATE * dur_s)
     if freq is None or n <= 0:
-        return []
-    out = []
+        return array.array('h')
+    out = array.array('h')
     harmonics = [(1.0, 1.00), (2.0, 0.35), (3.0, 0.18), (4.0, 0.09)]
     decay = 1.8 + 2.2 * (freq / 1000.0)
     fade_n = int(0.012 * SAMPLE_RATE)
+    w_sum = sum(w for _, w in harmonics)
     for i in range(n):
         t = i / SAMPLE_RATE
         env = math.exp(-decay * t)
         s = 0.0
         for mult, w in harmonics:
             s += w * math.sin(2.0 * math.pi * freq * mult * t)
-        v = s / sum(w for _, w in harmonics)
+        v = s / w_sum
         v *= env * amp
         attack = min(1.0, i / (0.005 * SAMPLE_RATE))
         v *= attack
@@ -198,19 +204,29 @@ _register('天空之城', ['castle in the sky', '天空之城主题', '君をの
      ('2',1),('3',1),('4',1),('5',1),('4',1),('3',1),('2',1),('1',1),
      ('2',2),('3',1),('2',1),('1',2),('7',1),('6',1)], bpm=90)
 
-def render_pcm(song, bpm=None):
+def render_pcm(song, bpm=None, max_seconds=None):
+    """整曲渲染 → (bytes PCM, sample数)
+    ⚠️ 2026-08-20: list+struct.pack(*samples) 展开 44 万参数 → 云函数 128MB OOM;
+    改 array('h') 拼接 + tobytes, 峰值内存 <3MB
+    ⚠️ 2026-08-20: FC 3.0 WSGI 响应超 1MB 报 invalid response type —
+    30s 小星星 base64=1.25MB 超限 → 加 max_seconds 截断 (15s 旋律足够听, 纯云端不烧固件)
+    """
     bpm = bpm or song['bpm']
     beat = 60.0 / bpm
-    samples = []
+    samples = array.array('h')
+    max_n = int((max_seconds or 999) * SAMPLE_RATE)
     for note in song['notes']:
         name, beats = note[0], note[1]
         rest = len(note) > 2 and note[2] == 'r'
         dur = beats * beat
+        n = int(SAMPLE_RATE * dur)
+        if max_seconds and len(samples) + n > max_n:
+            break                        # 超时截断, 保证音符完整 (断在音符边界)
         if rest:
-            samples.extend([0] * int(SAMPLE_RATE * dur))
+            samples.extend(array.array('h', [0]) * n)
         else:
             samples.extend(synth_note(note_freq(name), dur))
-    return struct.pack('<%dh' % len(samples), *samples), len(samples)
+    return samples.tobytes(), len(samples)
 
 def find_song(query):
     q = query.strip().lower()
@@ -963,10 +979,11 @@ def _glm_post(data):
         print("[Ask] GLM POST fail: %s" % e)
         return None
 
-def ask_llm(user_text, history=None):
+def ask_llm(user_text, history=None, memory=""):
     """B+C 合一: web_search 兜底 + get_weather function calling
     返回 ≤50 字纯文本 (UTF-8)
     history: ESP32 传来的对话历史, [[user1, assistant1], [user2, assistant2], ...]
+    memory:  P10 长期记忆 (ESP32 SD 卡"记住XXX"条目, 多行), 注入 system prompt
     """
     if not user_text or not user_text.strip():
         return "我没听清，请再说一遍"
@@ -986,8 +1003,16 @@ def ask_llm(user_text, history=None):
             print("[Ask] 文本含明确地名, 丢弃 history 防干扰")
             history = None
 
+    # P10: 长期记忆注入 system prompt (ESP32 SD 卡条目)
+    sys_prompt = _ASK_SYSTEM_PROMPT
+    if memory and str(memory).strip():
+        sys_prompt += ("【长期记忆】以下是你长期记住的、用户亲口告诉你的信息，"
+                       "回答时作为事实参考（例如称呼用户、用户的偏好等），不要质疑：\n"
+                       + str(memory).strip()[:800])   # 上限 800 字符防 prompt 爆炸
+        print("[Ask] memory injected (%d chars)" % len(str(memory).strip()))
+
     messages = [
-        {"role": "system", "content": _ASK_SYSTEM_PROMPT},
+        {"role": "system", "content": sys_prompt},
     ]
 
     # v1w: 注入历史对话 (最多 2 轮, ESP32 端已做淘汰)

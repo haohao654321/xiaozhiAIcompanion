@@ -205,6 +205,15 @@ void SpeakerManager::playPCM(int16_t* pcm, size_t samples) {
     _lastPlayMs    = (uint32_t)(samples * 1000UL / SPK_SAMPLE_RATE);
 }
 
+// ── v1z-A: 立即停止播放 (唤醒打断播报用) ──
+//   1) _freeBuf() 释放未播完的 PCM/tone 缓冲
+//   2) i2s_zero_dma_buffer 清掉 DMA 里已排队的数据 → 喇叭立即静音
+void SpeakerManager::stop() {
+    if (!_ready) return;
+    _freeBuf();
+    i2s_zero_dma_buffer(kPort);
+}
+
 // ── 释放缓冲 (tone + 外部 PCM 统一 free) ──
 void SpeakerManager::_freeBuf() {
     if (_buf) {

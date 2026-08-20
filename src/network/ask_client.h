@@ -18,9 +18,11 @@ public:
      * 联网问答
      * @param userText  用户 STT 文本 (任意自然语言)
      * @param outReply  [out] ≤50字 回复文本 (UTF-8)
+     * @param memory    P10: 长期记忆文本 (SD 卡条目, 空串=不带), 云端注入 prompt
      * @return true 成功; false 断网/超时/服务不可用
      */
-    bool ask(const String& userText, String& outReply);
+    bool ask(const String& userText, String& outReply,
+             const String& memory = "");
 
     /**
      * v1w: 追加一轮对话到历史 (user + assistant 成对)

@@ -40,9 +40,11 @@ void ConversationManager::begin(MicManager* mic, SpeakerManager* spk,
     _face = face;
     _state = CONV_IDLE;
     _llm.resetHistory();
-    Serial.printf("[CONV] Conversation manager ready (STT: Baidu, LLM: GLM-4-Flash, TTS: Baidu PCM, Vision: GLM-4V-Flash, Wake: %s, Face: %s)\n",
+    _memory.begin();   // P10: 加载 SD 长期记忆 (无卡则静默降级)
+    Serial.printf("[CONV] Conversation manager ready (STT: Baidu, LLM: GLM-4-Flash, TTS: Baidu PCM, Vision: GLM-4V-Flash, Wake: %s, Face: %s, Mem: %s)\n",
                   (_wake && _wake->isReady()) ? _wake->wordName() : "VAD-fallback",
-                  (_face && _face->isReady()) ? "ON" : "off");
+                  (_face && _face->isReady()) ? "ON" : "off",
+                  _memory.available() ? "SD" : "off");
 }
 
 // ── 进入状态 + LED 映射 ──
@@ -108,9 +110,24 @@ void ConversationManager::update() {
     }
 
     // P6: 唤醒事件公共处理 (IDLE 和 WAIT 都可唤醒)
+    // v1z-A: 播报中唤醒 → 立即打断进聆听 (方案A: 用户喊"你好小智"即可停播)
     if (!_wakeOnly && _state != CONV_RECORDING &&
         _wake && _wake->isReady() && _wake->consumeWakeEvent()) {
-        if (!_spk->isPlaying() && millis() >= _cooldownUntil) {
+        if (millis() >= _cooldownUntil) {
+            if (_spk->isPlaying()) {
+                Serial.println("[CONV] Wake during playback -> interrupt");
+                _spk->stop();                           // 立即静音 (清缓冲+DMA)
+                _melodyActive = false;                  // 本地旋律也停
+                if (_ttsBuf) {                          // 防御: 未移交播放的 TTS 缓冲
+                    heap_caps_free(_ttsBuf);
+                    _ttsBuf = nullptr;
+                }
+                _ttsSamples = 0;
+                _enterWait(true);                       // 聆听窗口 (10s 无语音回睡)
+                _mic->resetNoiseFloor();
+                _spk->playTone(880, 100);               // 短"叮"唤醒反馈
+                return;
+            }
             Serial.println("[CONV] Wake word trigger");
             // v1c: 唤醒后不立即录音 (旧方案录到唤醒词→STT→闪"思考中"白绕一圈);
             // 进聆听窗口: 显示聆听脸等真正说话, MN 命令/云端问题/10s无语音直接睡
@@ -274,7 +291,8 @@ void ConversationManager::_doSTT() {
     //   失败 → 降级走裸 LLM (断网/网关不可用时的兜底)
     {
         String askReply;
-        if (_ask.ask(_sttText, askReply)) {
+        // P10: /ask 带长期记忆 (SD 卡里的"记住XXX"条目 → 云端注入 prompt)
+        if (_ask.ask(_sttText, askReply, _memory.text())) {
             Serial.printf("[CONV] /ask OK -> TTS\n");
             _llmReply = askReply;
             // v1w: 对话成功 → 压入历史 (user问 + assistant答)
@@ -527,6 +545,21 @@ bool ConversationManager::_handleLocalAction(RouteAction act) {
         Serial.println("[CONV] Route MUSIC -> cloud music");
         _playCloudMusic();
         return true;
+    // ── P10: 记住XXX → 存 SD 长期记忆 ──
+    case ROUTE_REMEMBER: {
+        _spk->playTone(880, 90);                 // 高音反馈
+        if (_memory.available() && _pendingMemory.length() > 0) {
+            _memory.add(_pendingMemory);
+            ui.showMessage("记住了", 1500);
+            Serial.printf("[CONV] Memory saved: \"%s\"\n", _pendingMemory.c_str());
+        } else {
+            ui.showMessage("没记住", 1500);      // 无 SD 卡
+            Serial.println("[CONV] Memory save FAILED (SD unavailable)");
+        }
+        _pendingMemory = "";
+        _cmdCleanup(true);                       // 回等待
+        return true;
+    }
     default:
         return false;
     }
@@ -583,13 +616,65 @@ ConversationManager::RouteAction ConversationManager::_parseRoute(
         }
     }
 
+    // ── P10: 长期记忆 (记住/我叫/我喜欢 → 提取条目存 SD) ──
+    //   优先级在表情之后、睡觉之前 ("记住我说晚安"仍以记住优先)
+    {
+        static const char* const kRemKw[] = {"记住", "记着", "别忘了"};
+        for (const char* kw : kRemKw) {
+            int idx = text.indexOf(kw);
+            if (idx >= 0) {
+                String c = text.substring(idx + strlen(kw));
+                c.trim();
+                if (c.length() >= 2 && !c.startsWith("了")) {   // "记住我说晚安"→"我说晚安"仍可存; "记住了"太短跳过
+                    _pendingMemory = c;
+                    Serial.printf("[ROUTE] REMEMBER (\"%s\")\n", c.c_str());
+                    return ROUTE_REMEMBER;
+                }
+            }
+        }
+        static const char* const kFavKw[] = {"我喜欢", "我讨厌", "我不喜欢"};
+        for (const char* kw : kFavKw) {
+            int idx = text.indexOf(kw);
+            if (idx >= 0) {
+                String c = text.substring(idx + strlen(kw));
+                c.trim();
+                if (c.length() >= 2 && c != "你") {             // "我喜欢你"不存(空泛), "我喜欢听歌"→存
+                    _pendingMemory = "用户" + String(kw) + c;
+                    Serial.printf("[ROUTE] REMEMBER (\"%s\")\n", _pendingMemory.c_str());
+                    return ROUTE_REMEMBER;
+                }
+            }
+        }
+        int nameIdx = text.indexOf("我叫");
+        if (nameIdx >= 0) {
+            // ⚠️ 2026-08-20 真机bug: substring(nameIdx+2) 是字符数不是字节数!
+            //   "我叫"=6字节, +2 切在"叫"字中间 → 乱码 "用户叫�叫什么名字?"
+            //   必须用 strlen("我叫")=6 字节偏移
+            String c = text.substring(nameIdx + (int)strlen("我叫"));
+            c.trim();
+            // 问句过滤: "我叫什么名字?" 是查询不是陈述, 放行 /ask (云端带记忆回答)
+            if (c.length() >= 2 && !c.startsWith("了")
+                && c.indexOf("什么") < 0 && c.indexOf("？") < 0 && c.indexOf("?") < 0) {
+                _pendingMemory = "用户叫" + c;
+                Serial.printf("[ROUTE] REMEMBER (\"%s\")\n", _pendingMemory.c_str());
+                return ROUTE_REMEMBER;
+            }
+        }
+    }
+
     // ── 睡觉 ──
-    static const char* const kSleepKw[] = {"睡觉", "晚安", "我睡了", "要睡了", "睡吧"};
+    // v1z: 增加"退下/停止/停下" (双字词可包含匹配); 单字"停"全等特判 (防"停车场/停机"误伤)
+    static const char* const kSleepKw[] = {"睡觉", "晚安", "我睡了", "要睡了", "睡吧",
+                                           "退下", "停止", "停下"};
     for (const char* kw : kSleepKw) {
         if (text.indexOf(kw) >= 0) {
             Serial.printf("[ROUTE] SLEEP (\"%s\")\n", text.c_str());
             return ROUTE_SLEEP;
         }
+    }
+    if (text == "停" || text == "停了" || text == "停吧") {
+        Serial.printf("[ROUTE] SLEEP (\"%s\" exact)\n", text.c_str());
+        return ROUTE_SLEEP;
     }
 
     return ROUTE_NONE;

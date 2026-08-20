@@ -31,6 +31,9 @@ public:
      *  播完自动 free — 调用者不得再释放/复用该指针 */
     void playPCM(int16_t* pcm, size_t samples);
 
+    /** v1z-A: 立即停止播放 — 清缓冲 + 清 DMA 残留 (唤醒打断播报用) */
+    void stop();
+
     /** P3: 情绪切换提示音 (单音, 非阻塞; NEUTRAL/SAD 静音) */
     void playChime(CompanionEmotion e);
 

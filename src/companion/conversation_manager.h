@@ -34,6 +34,7 @@
 #include "../camera/capture_manager.h"    // P4.5: 拍照取帧
 #include "../audio_in/wake_word.h"        // P4-1: 离线唤醒词
 #include "../vision/face_recognition.h"   // P7a: 人脸识别 (本地)
+#include "../memory/memory_store.h"       // P10: 长期记忆 (SD 卡)
 
 class ConversationManager {
 public:
@@ -62,6 +63,11 @@ public:
     void faceClear();                         // 清空全部
     void faceSetThreshold(float t);           // 调识别阈值
     void faceTest();                          // 单帧识别调试
+
+    // ── P10: 长期记忆管理 (串口命令入口) ──
+    void clearMemory() { _memory.clearAll(); }   // MEMCLEAR: 清空 SD 记忆
+    void listMemory() { Serial.printf("[MEM] %u bytes: \"%s\"\n",
+        _memory.text().length(), _memory.text().c_str()); }   // MEMLIST: 打印当前记忆
 
 private:
     enum ConvState : uint8_t {
@@ -145,6 +151,7 @@ private:
         ROUTE_LOOK,         // 看看 → 视觉对话 (GLM-4V)
         ROUTE_EMOTION,      // 换个表情 (彩蛋)
         ROUTE_SLEEP,        // 睡觉
+        ROUTE_REMEMBER,     // P10: 记住XXX → 存长期记忆 (SD)
     };
     bool        _routeText(const String& text);                    // 关键词路由入口 (返回 true=已处理)
     RouteAction _parseRoute(const String& text);                   // 关键词+参数解析
@@ -190,4 +197,8 @@ private:
 
     // v1j: 思考语音提示已播标志 (STT→LLM 只播一次; 每次录音/LOOK 命令重置)
     bool _thinkVPPlayed = false;
+
+    // P10: 长期记忆 (SD 卡; 随 /ask 发云端注入 prompt)
+    MemoryStore _memory;
+    String      _pendingMemory;   // ROUTE_REMEMBER 暂存提取出的记忆条目
 };

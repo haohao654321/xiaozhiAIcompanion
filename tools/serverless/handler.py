@@ -174,7 +174,7 @@ def handler(event, context):
         song = find_song(q)
         if not song:
             return _resp("找不到这首歌", status=404)
-        pcm_bytes, _ = render_pcm(song)
+        pcm_bytes, _ = render_pcm(song, max_seconds=15)   # 15s 截断: FC 3.0 WSGI 响应超 ~1MB 报 invalid response type
         fmt = query.get("format", "pcm")
         if fmt == "wav":
             wav_bytes = build_wav(pcm_bytes)
@@ -195,7 +195,9 @@ def handler(event, context):
             return _resp("text field required", status=400)
         # v1w: 透传对话历史 (ESP32 端维护 2 轮, 网关指代消解/追问依赖它)
         history = data.get("history", []) or []
-        reply = ask_llm(text, history)
+        # P10: 长期记忆 (ESP32 SD 卡条目, 注入 system prompt)
+        memory = data.get("memory", "") or ""
+        reply = ask_llm(text, history, memory)
         if reply is None:
             reply = "这个问题我想不起来了"
         return _resp(reply)
