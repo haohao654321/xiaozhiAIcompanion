@@ -124,82 +124,41 @@ bool MusicClient::fetchSong(const String& songName, int16_t** outBuf,
         return false;
     }
 
-    // ── v2e: 手动解析 Transfer-Encoding: chunked ──
-    // 阿里云 FC 返回 chunked 无 Content-Length, 且 http.getStreamPtr()
-    // 拿到的是原始 TCP 流 —— HTTPClient **不会**自动解 chunked,
-    // chunk 帧的 "大小hex\r\n" 和 "\r\n" 会被当数据读进来, 混入 base64
-    // → _decodeBase64 判定非法字符而 FAIL (上一版 v2d 直接读流的 bug)
+    // ── v2g: 用 HTTPClient::writeToStream() 自动解 chunked ──
+    // 前几版手动解析 chunked 帧 (v2e/v2f) 均失败: 逐字节太慢超时、
+    // 状态机复杂容易丢字节, 最终只读到 64% (409672/640000)。
     //
-    // 这里按 chunk 规范手解: [hex\r\n][数据\r\n][hex\r\n][数据\r\n]...[0\r\n][\r\n]
-    WiFiClient* stream = http.getStreamPtr();
+    // HTTPClient::writeToStream() 内置 chunked 解码, 自动处理帧结构。
+    // 写一个最小 PSRAM 缓冲流, writeToStream 把解完的数据直接写入。
     int total = 0;
-    bool inChunkData = false;    // true = 正在读 chunk 数据区 (需跳过尾部 \r\n)
-    int chunkRemain = 0;         // 当前 chunk 剩余数据字节
-    int crlfSkip = 0;            // 待跳过的 \r\n 字节数 (chunk 边界)
-    bool sawTerminator = false;  // 读到 0 长度的终止 chunk
-    char chunkSizeBuf[16];       // 累积 chunk 大小 hex 字符串
-    size_t chunkSizeHexLen = 0;  // 当前累积的 hex 字符数
-    uint32_t timeout = millis() + MUSIC_DOWNLOAD_TIMEOUT_MS;
-
-    while (millis() < timeout && total < totalLen && !sawTerminator) {
-        if (!http.connected()) {
-            // FC 传完最后一个 chunk 后可能主动断开; 已拿到数据就算完成
-            if (total > 0) break;
-            Serial.println("[MUSIC] conn closed before any data");
-            http.end();
-            heap_caps_free(b64buf);
-            return false;
-        }
-        int avail = stream->available();
-        if (avail <= 0) { delay(2); continue; }
-
-        if (crlfSkip > 0) {
-            // 跳过 chunk 边界的 \r\n — 直接读掉不处理
-            stream->read();
-            crlfSkip--;
-            continue;
-        }
-        if (inChunkData) {
-            // ⚠️ v2f: 数据区必须批量 read — 单字节 read() 640KB 逐字节
-            //   + delay 太慢, 30s 超时内读不完 (实测只到 64%)。
-            //   大小行短仍逐字节, 数据区一次读尽量多。
-            if (chunkRemain > 0) {
-                int want = chunkRemain;
-                int a = stream->available();
-                if (a > 0 && a < want) want = a;
-                if (want > totalLen - total) want = totalLen - total;
-                if (want > 0) {
-                    int rd = stream->read(b64buf + total, want);
-                    if (rd > 0) {
-                        total += rd;
-                        chunkRemain -= rd;
-                        if (chunkRemain == 0) {
-                            crlfSkip = 2;       // chunk 结尾的 \r\n
-                            inChunkData = false;
-                        }
-                    }
-                } else { delay(1); }
+    {
+        class PsramBufStream : public Stream {
+        public:
+            PsramBufStream(uint8_t* buf, size_t cap)
+                : _buf(buf), _cap(cap), _pos(0) {}
+            size_t write(uint8_t c) override {
+                if (_pos >= _cap) return 0;
+                _buf[_pos++] = c;
+                return 1;
             }
-            continue;
-        }
-        // 读取 chunk 大小行: 逐字节直到 \n
-        int c = stream->read();
-        if (c < 0) { delay(2); continue; }
-        if (c == '\n') {
-            if (chunkSizeHexLen == 0) { continue; }  // 容错空行
-            size_t hexLen = chunkSizeHexLen;
-            for (size_t k = 0; k < hexLen; k++) {
-                if (chunkSizeBuf[k] == ';') { hexLen = k; break; }
+            size_t write(const uint8_t* buf, size_t len) override {
+                size_t n = (len <= _cap - _pos) ? len : (_cap - _pos);
+                if (n > 0) { memcpy(_buf + _pos, buf, n); _pos += n; }
+                return n;
             }
-            long sz = strtol((const char*)chunkSizeBuf, nullptr, 16);
-            chunkSizeHexLen = 0;
-            if (sz <= 0) { sawTerminator = true; break; }
-            chunkRemain = (int)sz;
-            inChunkData = true;
-        } else if (c != '\r') {
-            if (chunkSizeHexLen < sizeof(chunkSizeBuf) - 1)
-                chunkSizeBuf[chunkSizeHexLen++] = (char)c;
-        }
+            int available() override { return 0; }
+            int read() override { return -1; }
+            int peek() override { return -1; }
+            size_t size() const { return _pos; }
+        private:
+            uint8_t* _buf;
+            size_t _cap;
+            size_t _pos;
+        };
+
+        PsramBufStream ps(b64buf, (size_t)totalLen);
+        http.writeToStream(&ps);
+        total = (int)ps.size();
     }
     http.end();
 
