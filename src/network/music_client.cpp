@@ -124,43 +124,75 @@ bool MusicClient::fetchSong(const String& songName, int16_t** outBuf,
         return false;
     }
 
-    // 流式下载 base64 文本 (支持 chunked, 读到流关闭)
+    // ── v2e: 手动解析 Transfer-Encoding: chunked ──
+    // 阿里云 FC 返回 chunked 无 Content-Length, 且 http.getStreamPtr()
+    // 拿到的是原始 TCP 流 —— HTTPClient **不会**自动解 chunked,
+    // chunk 帧的 "大小hex\r\n" 和 "\r\n" 会被当数据读进来, 混入 base64
+    // → _decodeBase64 判定非法字符而 FAIL (上一版 v2d 直接读流的 bug)
+    //
+    // 这里按 chunk 规范手解: [hex\r\n][数据\r\n][hex\r\n][数据\r\n]...[0\r\n][\r\n]
     WiFiClient* stream = http.getStreamPtr();
-    uint8_t* p = b64buf;
     int total = 0;
+    bool inChunkData = false;    // true = 正在读 chunk 数据区 (需跳过尾部 \r\n)
+    int chunkRemain = 0;         // 当前 chunk 剩余数据字节
+    int crlfSkip = 0;            // 待跳过的 \r\n 字节数 (chunk 边界)
+    bool sawTerminator = false;  // 读到 0 长度的终止 chunk
+    char chunkSizeBuf[16];       // 累积 chunk 大小 hex 字符串
+    size_t chunkSizeHexLen = 0;  // 当前累积的 hex 字符数
     uint32_t timeout = millis() + MUSIC_DOWNLOAD_TIMEOUT_MS;
-    int idleMs = 0;                     // 连续无数据毫秒数, 超 500ms 认为结束
 
-    while (http.connected() && millis() < timeout && total < totalLen) {
-        int avail = stream->available();
-        if (avail > 0) {
-            int toRead = (avail < totalLen - total) ? avail : (totalLen - total);
-            int rd = stream->read(p + total, toRead);
-            if (rd > 0) {
-                total += rd;
-                idleMs = 0;
-            }
-        } else {
-            if (total > 0 && idleMs >= 500) break;  // 已有数据 + 500ms 无新数据 → 下载完成
-            idleMs += 5;
-            delay(5);
+    while (millis() < timeout && total < totalLen && !sawTerminator) {
+        if (!http.connected()) {
+            // FC 传完最后一个 chunk 后可能主动断开; 已拿到数据就算完成
+            if (total > 0) break;
+            Serial.println("[MUSIC] conn closed before any data");
+            http.end();
+            heap_caps_free(b64buf);
+            return false;
         }
-    }
+        int avail = stream->available();
+        if (avail <= 0) { delay(2); continue; }
+        int c = stream->read();
+        if (c < 0) { delay(2); continue; }
 
-    // 如果已连接但数据稳定了, 再等一等最终数据
-    if (http.connected() && total > 0) {
-        idleMs = 0;
-        while (http.connected() && millis() < timeout && total < totalLen) {
-            int avail = stream->available();
-            if (avail > 0) {
-                int toRead = (avail < totalLen - total) ? avail : (totalLen - total);
-                int rd = stream->read(p + total, toRead);
-                if (rd > 0) { total += rd; idleMs = 0; }
-            } else {
-                if (idleMs >= 500) break;
-                idleMs += 5;
-                delay(5);
+        if (crlfSkip > 0) {           // 跳过 chunk 边界的 \r\n
+            crlfSkip--;
+            continue;
+        }
+        if (inChunkData) {
+            if (chunkRemain > 0) {
+                b64buf[total++] = (uint8_t)c;   // chunk 数据区字节 → base64
+                chunkRemain--;
+                if (chunkRemain == 0) {
+                    crlfSkip = 2;               // chunk 结尾的 \r\n
+                    inChunkData = false;
+                }
             }
+            continue;
+        }
+        // 读取 chunk 大小行: hex 到 \n 结束
+        if (c == '\n') {
+            // 解析已积累的大小字节
+            if (chunkSizeHexLen == 0) {
+                // 空行(单独 \n)出现说明上一个 chunk 刚结束且没走 crlfSkip? 容错跳过
+                continue;
+            }
+            // 忽略 "hex;ext" 形式的扩展 (分号后截断)
+            size_t hexLen = chunkSizeHexLen;
+            for (size_t k = 0; k < hexLen; k++) {
+                if (chunkSizeBuf[k] == ';') { hexLen = k; break; }
+            }
+            long sz = strtol((const char*)chunkSizeBuf, nullptr, 16);
+            chunkSizeHexLen = 0;
+            if (sz <= 0) {              // 终止 chunk: 0\r\n\r\n
+                sawTerminator = true;
+                break;
+            }
+            chunkRemain = (int)sz;
+            inChunkData = true;
+        } else if (c != '\r') {
+            if (chunkSizeHexLen < sizeof(chunkSizeBuf) - 1)
+                chunkSizeBuf[chunkSizeHexLen++] = (char)c;
         }
     }
     http.end();
