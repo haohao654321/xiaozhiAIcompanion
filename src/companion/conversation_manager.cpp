@@ -683,17 +683,15 @@ ConversationManager::RouteAction ConversationManager::_parseRoute(
         }
     }
     // 去掉中英文标点后全等比对 ("停。" "停!" "停，" → 都算"停")
+    // ⚠️ v2d: 不能用 char 单字节比较 '。'(3字节) — 永远 false!
+    //   改为 String::remove 移除中英文标点, UTF-8 安全
     String clean = text;
     {
-        String out;
-        out.reserve(clean.length());
-        for (size_t i = 0; i < clean.length(); i++) {
-            char c = clean[i];
-            if (c == '。' || c == '！' || c == '？' || c == '，' || c == '.'
-                || c == '!' || c == '?' || c == ',' || c == ' ' || c == '　') continue;
-            out += c;
+        static const char* kPuncts[] = {"。", "！", "？", "，", "．", "、", "；", "：",
+                                        ".", "!", "?", ",", " ", "　"};
+        for (auto* p : kPuncts) {
+            clean.replace(p, "");
         }
-        clean = out;
     }
     if (clean == "停" || clean == "停了" || clean == "停吧") {
         Serial.printf("[ROUTE] SLEEP (\"%s\" exact, clean=\"%s\")\n", text.c_str(), clean.c_str());
