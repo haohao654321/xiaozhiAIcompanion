@@ -594,9 +594,27 @@ ConversationManager::RouteAction ConversationManager::_parseRoute(
     if (text.length() == 0) return ROUTE_NONE;
 
     // ── 音乐 (播放/唱歌) ──
+    // v2j: 先检查文本是否包含歌名 → 点播指定曲; 否则轮换
     static const char* const kMusicKw[] = {"音乐", "首歌", "点歌", "钢琴", "弹", "唱"};
+    static const char* const kSongNames[] = {
+        "小星星", "一闪一闪", "致爱丽丝", "爱丽丝", "欢乐颂", "贝多芬",
+        "两只老虎", "老虎", "生日快乐", "生日歌", "天空之城", "天空之城主题"
+    };
+    static const char* const kSongPlaylist[] = {
+        "小星星", "致爱丽丝", "天空之城", "欢乐颂", "两只老虎", "生日快乐"
+    };
+    static const uint8_t kSongCount = sizeof(kSongPlaylist) / sizeof(kSongPlaylist[0]);
     for (const char* kw : kMusicKw) {
         if (text.indexOf(kw) >= 0) {
+            _pendingSong = "";
+            // 检查是否指定了歌名
+            for (uint8_t i = 0; i < sizeof(kSongNames) / sizeof(kSongNames[0]); i++) {
+                if (text.indexOf(kSongNames[i]) >= 0) {
+                    _pendingSong = kSongPlaylist[i % kSongCount];  // 别名映射到播放名
+                    Serial.printf("[ROUTE] MUSIC requested \"%s\"\n", _pendingSong.c_str());
+                    return ROUTE_MUSIC;
+                }
+            }
             Serial.printf("[ROUTE] MUSIC (\"%s\")\n", text.c_str());
             return ROUTE_MUSIC;
         }
@@ -769,13 +787,20 @@ void ConversationManager::_playCloudMusic() {
     // v1o: 下载前先播提示语, 让用户知道正在准备
     _playBlockingTTS("好嘞，给你弹一首");
 
-    // 轮换点歌: 小星星 → 致爱丽丝 → 天空之城 → 循环 (再弹一首有新鲜感)
-    static const char* kPlaylist[] = { "小星星", "致爱丽丝", "天空之城" };
+    // 轮换点歌: 小星星 → 致爱丽丝 → 天空之城 → 欢乐颂 → 两只老虎 → 生日快乐 → 循环
+    // v2j: 如果 _pendingSong 非空 → 点播指定曲目
+    static const char* kPlaylist[] = { "小星星", "致爱丽丝", "天空之城", "欢乐颂", "两只老虎", "生日快乐" };
     _musicQueueLen = sizeof(kPlaylist) / sizeof(kPlaylist[0]);
     for (uint8_t i = 0; i < _musicQueueLen; i++) _musicQueue[i] = kPlaylist[i];
-    if (_musicQueueIdx >= _musicQueueLen) _musicQueueIdx = 0;
-    String song = _musicQueue[_musicQueueIdx];
-    _musicQueueIdx++;
+    String song;
+    if (_pendingSong.length() > 0) {
+        song = _pendingSong;
+        _pendingSong = "";
+    } else {
+        if (_musicQueueIdx >= _musicQueueLen) _musicQueueIdx = 0;
+        song = _musicQueue[_musicQueueIdx];
+        _musicQueueIdx++;
+    }
 
     // 下载到 PSRAM (复用 _ttsBuf/_ttsSamples 传输变量, 播放阶段由 _doPlaying 消费)
     _ttsBuf = nullptr; _ttsSamples = 0;

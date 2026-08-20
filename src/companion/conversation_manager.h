@@ -168,9 +168,10 @@ private:
     // P7b: 云端音乐播放 (方案二: 下载 PCM → playPCM 非阻塞)
     void        _playCloudMusic();             // P8d: 音乐路由 (文本关键词"音乐/歌/唱"命中) → 下载 → PLAYING
     void        _playBlockingTTS(const String& text); // v1o: 阻塞播报任意 TTS 文本 (用于音乐提示语)
-    String      _musicQueue[3];                // 点歌队列 (轮换备选曲目)
+    String      _musicQueue[8];                // 点歌队列 (轮换备选曲目, 云端SONGS全部)
     uint8_t     _musicQueueLen = 0;            // 队列长度
     uint8_t     _musicQueueIdx = 0;            // 当前播放索引
+    String      _pendingSong;                  // v2j: 点歌名 (STT说"唱欢乐颂"→ 暂存, 非空则播指定)
 
     // P7a: 睡眠时人脸识别 → 欢迎播报
     void _updateFaceCheck();                   // CONV_IDLE 里周期性跑 (节流/冷却内跳过)
